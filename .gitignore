@@ -1,7 +1,8 @@
-# ===== Cấu hình nhạy cảm (KHÔNG đẩy lên) =====
+# ===== Cấu hình nhạy cảm =====
+# aibox.conf.json + go2rtc.yaml DUOC DUA LEN repo (can cho build/run).
+# CANH BAO: chua mat khau that (box, 8 camera RTSP, Telegram bot token).
 cams.json
 tg_groups.json
-aibox.conf.json
 def.json
 _chdetail.json
 _dp.json
@@ -11,6 +12,7 @@ chl.json
 t_add.json
 algo_dump.json
 *.conf.json
+!aibox.conf.json
 *.key
 *.pem
 .env
@@ -35,9 +37,7 @@ electron-app/_test_build/
 electron-app/_trace_build/
 electron-app/node_modules/
 
-# ===== go2rtc binary + config =====
-go2rtc.exe
-go2rtc.yaml
+# ===== go2rtc: exe + yaml DUOC dua len repo (build + run can) =====
 go2rtc.yaml.bak
 go2rtc*.log
 

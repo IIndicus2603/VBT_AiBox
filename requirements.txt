@@ -1,0 +1,3 @@
+# aibox.py chi dung stdlib -> khong co dependency runtime.
+# PyInstaller chi can cho buoc dong goi (npm run build:backend).
+pyinstaller>=6.0
