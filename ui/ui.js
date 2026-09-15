@@ -344,7 +344,8 @@ export async function removeStream(name) {
 async function refresh() {
   try {
     const j = await pollStreams();
-    const names = Object.keys(j).sort();
+    // Bỏ qua các luồng tạm (_probe_...) kiểm tra kết nối, không vẽ lên lưới Home
+    const names = Object.keys(j).filter(n => !n.startsWith('_probe_')).sort();
     const changed = names.join() !== S.order.join();
     S.order = names;
     if (changed) drawGrid();
