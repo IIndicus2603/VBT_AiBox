@@ -8,6 +8,9 @@ import {VideoRTC} from './video-rtc.js';
  *
  * Trạng thái đẩy ra ngoài bằng CustomEvent('state'):
  *   connecting | live | retry | error | idle
+ * 'retry' nghĩa là "đang thử lại", KHÔNG phải lỗi. Phải quá `maxRetry` lần liên
+ * tiếp không có hình mới đổi thành 'error'. Trước đây báo 'error' ngay lần rớt
+ * đầu nên chỉ cần mạng chớp một cái là tile đã hiện OFFLINE.
  * QUAN TRỌNG: 'idle' KHÁC 'error'. ondisconnect() của VideoRTC chỉ chạy khi bị
  * tháo có chủ ý (tile cuộn ra ngoài, đổi tab, gỡ khỏi DOM > 5s) — mất mạng thì
  * đi qua onclose() rồi tự reconnect. Coi hai cái là một sẽ báo "mất luồng" mỗi
@@ -28,9 +31,12 @@ class VideoStream extends VideoRTC {
         this._stallInt = 0;                   // fallback: interval poll khi không có rVFC
         this._stallLast = -1;                 // currentTime lần check trước (fallback)
         this._stallAt = 0;                    // mốc giờ cuối có frame mới (fallback)
+        this._retries = 0;                    // số lần retry liên tiếp chưa có hình
+        this.maxRetry = this.maxRetry || 3;   // quá ngưỡng này mới báo 'error'
         // videoWidth/Height chỉ có sau frame đầu -> 'resize' là mốc "đã có hình"
         this.video.addEventListener('resize', () => {
             if (this.video.videoHeight) {
+                this._retries = 0;            // có hình -> chuỗi retry kết thúc
                 this.emit('live', {mode: this.playMode});
                 this._armStall();             // có hình -> bắt đầu canh treo
             }
@@ -102,7 +108,15 @@ class VideoStream extends VideoRTC {
     onclose() {
         const retry = super.onclose();
         // ws đóng khi WebRTC thắng là chuyện bình thường -> chỉ báo khi thật sự retry
-        if (retry && this.pcState !== WebSocket.OPEN) this.emit('retry');
+        if (retry && this.pcState !== WebSocket.OPEN) {
+            // Chưa quá maxRetry -> 'retry' (UI hiện "đang kết nối"). Quá ngưỡng mới
+            // 'error' để UI hiện OFFLINE. _retries reset ở lần có hình đầu tiên.
+            if (++this._retries > this.maxRetry) {
+                this.emit('error', {error: 'Thử lại ' + this.maxRetry + ' lần không được'});
+            } else {
+                this.emit('retry', {attempt: this._retries});
+            }
+        }
         return retry;
     }
 
@@ -115,6 +129,7 @@ class VideoStream extends VideoRTC {
     ondisconnect() {
         super.ondisconnect();
         this.playMode = null;
+        this._retries = 0;     // teardown có chủ ý -> lần nối sau đếm lại từ đầu
         this._stallDisarm();   // ngưng có chủ ý -> dừng canh treo
         this.emit('idle');     // tạm dừng có chủ ý, KHÔNG phải lỗi
     }

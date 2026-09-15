@@ -1192,6 +1192,16 @@ a{color:#e6dbba}a:hover{color:#f4ecca}
 #logFilterMenu .mrow .l{font-size:12px}
 #logFilterMenu .mrow .k{font-weight:500}
 #logFilterMenu .mrow.on{box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+/* menu loc nhat ky gio co 2 khuc Camera / Hanh vi: cuon duoc, tieu de khuc khong
+   bam duoc, hang hanh vi thut le duoi nhom cua no. */
+#logFilterMenu{max-height:min(70vh,540px);overflow-y:auto;overscroll-behavior:contain}
+#logFilterMenu .msec{font:600 10px/1 var(--b);letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ghost);padding:10px 12px 4px;user-select:none}
+#logFilterMenu .msec:first-child{padding-top:2px}
+#logFilterMenu .mrow.ro{cursor:default}
+#logFilterMenu .mrow.ro:hover{background:transparent}
+#logFilterMenu .mrow.sub{padding-left:26px}
+#logFilterMenu .mrow.sub:not(.on) .l{font-weight:500;color:#c9c9d1}
 .msep{background:rgba(255,255,255,.10)}
 
 /* ---------- LIVE tiles: design [data-tile] look on the legacy .tile class ----------

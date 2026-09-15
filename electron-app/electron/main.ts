@@ -1,171 +1,167 @@
 import { app, BrowserWindow, Menu, ipcMain } from 'electron'
-import ModuleNode from 'module'
 import { fileURLToPath } from 'url'
 import path from 'path'
-import { spawn, execFile } from 'child_process'
+import http from 'http'
 import net from 'net'
+import fs from 'fs'
 
-ModuleNode.Module.createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-process.env.APP_ROOT = path.join(__dirname, '..')
-export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
-export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
-export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
+// ---------------------------------------------------------------------------
+// Mo hinh: 1 BE + N client.
+//   BE   = aibox.py + go2rtc, chay tren MAY CHU (co box trong LAN).
+//   FE   = thu muc ui/, dong goi THANG VAO BO CAI nay va duoc phuc vu tu
+//          127.0.0.1:<port> cua chinh may khach.
+// Khong con backend con o may khach: app nay chi mo giao dien roi goi API ve BE.
+//
+// Vi sao phai co HTTP server noi bo chu khong dung loadFile: ui/index.html nap
+// <script type="module">, ma ES module bi trinh duyet chan khi origin la file://.
+// Them nua origin http://127.0.0.1:<port> nam san trong danh sach CORS cua
+// aibox.py (_cors), nen khong phai sua gi ben BE.
+// ---------------------------------------------------------------------------
 
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
-  ? path.join(process.env.APP_ROOT, 'public')
-  : path.join(process.env.APP_ROOT, 'dist')
+const DEV = !app.isPackaged
+const UI_DIR = DEV ? path.join(__dirname, '..', '..', 'ui')
+                   : path.join(process.resourcesPath, 'ui')
 
-let win: BrowserWindow | null
-let aiboxProc: import('child_process').ChildProcess | null = null
+// Dia chi BE khi chua co server.txt. Doi may BE thi SUA FILE, khong build lai:
+//   %APPDATA%\unv-smartbox-desktop\server.txt
+const DEFAULT_ORIGIN = 'http://192.168.21.34:8090'
 
-const AIBOX_PORT = parseInt(process.env.BRIDGE_PORT || '8090', 10)
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+}
 
-// ---------- single instance ----------
+let win: BrowserWindow | null = null
+let origin = DEFAULT_ORIGIN          // URL day du, co cong: de do cong + luu server.txt
+let originUi = ''                    // scheme+host KHONG cong: de bom cho giao dien
+
+// ui/app.js va ui/ai.js TU gan ':8090' / ':1984' vao gia tri nay (xem hang ORIGIN o
+// hai file do). Bom ca cong vao la thanh '...:8090:8090' -> URL rac, moi loi goi API
+// hong. Nen phai cat cong ra truoc khi bom.
+function originHost(o: string): string {
+  try { const u = new URL(o); return u.protocol + '//' + u.hostname } catch { return o }
+}
+
+// ---------------------------------------------------------------- cau hinh BE
+const originFile = () => path.join(app.getPath('userData'), 'server.txt')
+
+function readOrigin(): string {
+  try {
+    const s = fs.readFileSync(originFile(), 'utf8').trim()
+    if (s) return s.replace(/\/+$/, '')
+  } catch { /* chua co file -> dung mac dinh */ }
+  return DEFAULT_ORIGIN
+}
+
+function writeOrigin(v: string): boolean {
+  let s = String(v || '').trim().replace(/\/+$/, '')
+  if (!/^https?:\/\/[^\s/]+(:\d+)?$/.test(s)) return false
+  // Nguoi dung hay go thieu cong -> mac dinh 8090, khong thi phep do cong se roi vao 80.
+  if (!/:\d+$/.test(s)) s += ':8090'
+  fs.writeFileSync(originFile(), s + '\n', 'utf8')
+  return true
+}
+
+// ------------------------------------------------------------------ http noi bo
+function serveUi(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = http.createServer((req, res) => {
+      const rel = decodeURIComponent((req.url || '/').split('?')[0])
+      const file = path.normalize(path.join(UI_DIR, rel === '/' ? 'index.html' : rel))
+      // Chan path traversal: /../../... khong duoc thoat khoi UI_DIR.
+      if (!file.startsWith(path.normalize(UI_DIR + path.sep))) {
+        res.writeHead(403).end(); return
+      }
+      fs.readFile(file, (err, buf) => {
+        if (err) { res.writeHead(404).end(); return }
+        res.writeHead(200, {
+          'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+          'Cache-Control': 'no-store',   // sua ui/ -> mo lai la thay, khong dinh cache
+        })
+        res.end(buf)
+      })
+    })
+    srv.on('error', reject)
+    srv.listen(0, '127.0.0.1', () => resolve((srv.address() as net.AddressInfo).port))
+  })
+}
+
+// BE song chua? Do cong truoc khi mo cua so, de con kip hien trang "nhap dia chi"
+// thay vi mot giao dien trang tron (giao dien van load duoc, chi API la chet).
+function reachable(o: string, ms = 3000): Promise<boolean> {
+  return new Promise((resolve) => {
+    let u: URL
+    try { u = new URL(o) } catch { resolve(false); return }
+    const s = net.createConnection(
+      { host: u.hostname, port: Number(u.port || (u.protocol === 'https:' ? 443 : 80)) },
+      () => { s.destroy(); resolve(true) })
+    s.setTimeout(ms, () => { s.destroy(); resolve(false) })
+    s.on('error', () => resolve(false))
+  })
+}
+
+// ---------------------------------------------------------------------- window
+function createWindow(port: number, ok: boolean) {
+  win = new BrowserWindow({
+    icon: path.join(UI_DIR, 'assets', 'logo.png'),
+    // Kiosk: mo full screen, khong thoat duoc bang F11/Esc (dung nghia kiosk).
+    // Muon thoat thi Task Manager / dong process. Can dong de hon thi doi
+    // kiosk:true -> fullscreen:true (van full screen nhung Alt+F4/Esc thoat duoc).
+    // Chi bat o ban dong goi: luc dev ma kiosk thi khong thoat ra de sua duoc.
+    kiosk: !DEV,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      webSecurity: false,
+      allowRunningInsecureContent: true,
+    },
+  })
+  Menu.setApplicationMenu(null)
+  win.loadURL(`http://127.0.0.1:${port}/${ok ? 'index.html' : 'offline.html'}`)
+}
+
+// ------------------------------------------------------------------ IPC
+ipcMain.on('aibox:origin', (e) => { e.returnValue = originUi })   // cho ui/app.js, ui/ai.js
+ipcMain.on('aibox:server', (e) => { e.returnValue = origin })     // cho ui/offline.html
+
+ipcMain.handle('aibox:set-origin', (_e, v: string) => {
+  if (!writeOrigin(v)) return { ok: false, err: 'Dia chi phai dang http://ip:cong' }
+  app.relaunch()
+  app.exit(0)
+  return { ok: true }
+})
+
+// ------------------------------------------------------------------ lifecycle
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') { app.quit(); win = null }
+})
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) app.whenReady().then(boot)
+})
+
+async function boot() {
+  origin = readOrigin()
+  originUi = originHost(origin)
+  const ok = await reachable(origin)
+  if (!ok) console.warn('[aibox] BE khong tra loi:', origin)
+  const port = await serveUi()
+  createWindow(port, ok)
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-    }
+    if (win) { if (win.isMinimized()) win.restore(); win.focus() }
   })
+  app.whenReady().then(boot)
 }
-
-// ---------- aibox backend child process ----------
-
-function aiboxCommand(): { cmd: string; args: string[]; cwd: string } {
-  if (VITE_DEV_SERVER_URL) {
-    // dev: chay truc tiep bang Python, data o ngay canh aibox.py
-    const dir = path.join(process.env.APP_ROOT!, '..')
-    return { cmd: 'py', args: [path.join(dir, 'aibox.py')], cwd: dir }
-  }
-  // prod: aibox.exe (PyInstaller) trong resources/aibox/, data o userData
-  const dir = path.join(process.resourcesPath, 'aibox')
-  return { cmd: path.join(dir, 'aibox.exe'), args: [], cwd: dir }
-}
-
-function spawnAibox() {
-  const { cmd, args, cwd } = aiboxCommand()
-  const dataDir = app.getPath('userData')
-
-  aiboxProc = spawn(cmd, args, {
-    cwd,
-    env: { ...process.env, AIBOX_DATA: dataDir },
-    stdio: 'ignore',        // ponytail: silent; uncomment when debugging startup
-    detached: true,         // tao process group rieng de taskkill /T giet ca go2rtc
-  })
-
-  aiboxProc.on('error', (err) => {
-    console.error('[aibox] spawn failed:', err.message)
-  })
-  aiboxProc.on('exit', (code) => {
-    console.error('[aibox] exited with code', code)
-    aiboxProc = null
-  })
-}
-
-function killAibox() {
-  if (!aiboxProc || aiboxProc.killed) return
-  const pid = aiboxProc.pid
-  aiboxProc.kill()
-  // Windows khong tu giet con chau (go2rtc.exe) -> taskkill /T giet ca cay.
-  // ponytail: chi Windows can; POSIX kill() da giet ca process group.
-  if (process.platform === 'win32' && pid) {
-    execFile('taskkill', ['/PID', String(pid), '/T', '/F'], () => {})
-  }
-  aiboxProc = null
-}
-
-function waitForPort(port: number, ms = 8000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const deadline = Date.now() + ms
-    const tryConnect = () => {
-      const s = net.createConnection({ host: '127.0.0.1', port }, () => {
-        s.destroy()
-        resolve(true)
-      })
-      s.on('error', () => {
-        if (Date.now() > deadline) { resolve(false); return }
-        setTimeout(tryConnect, 200)
-      })
-    }
-    tryConnect()
-  })
-}
-
-// ---------- window ----------
-
-function createWindow() {
-  win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC!, 'logo.svg'),
-    // Kiosk: mở full screen, không thoát được bằng F11/Esc (đúng nghĩa kiosk).
-    // Muốn thoát thì Task Manager / đóng process. Nếu cần đóng dễ hơn, đổi
-    // kiosk:true -> fullscreen:true (vẫn full screen nhưng Alt+F4/Esc thoát được).
-    kiosk: true,
-    autoHideMenuBar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      webSecurity: false,
-      allowRunningInsecureContent: true,
-    },
-  })
-
-  Menu.setApplicationMenu(null)
-
-  if (VITE_DEV_SERVER_URL) {
-    win.webContents.openDevTools()
-    win.loadURL(VITE_DEV_SERVER_URL)
-  } else {
-    // KHONG loadFile(dist/index.html): file:// origin bi go2rtc WebSocket reject.
-    // aibox.py serve UI tai :8090 — Origin la http://127.0.0.1:8090, go2rtc cho phep.
-    win.loadURL(`http://127.0.0.1:${AIBOX_PORT}`)
-  }
-}
-
-// ---------- app lifecycle ----------
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    killAibox()
-    app.quit()
-    win = null
-  }
-})
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
-})
-
-app.on('before-quit', killAibox)
-
-app.whenReady().then(async () => {
-  spawnAibox()
-  const ready = await waitForPort(AIBOX_PORT)
-  if (!ready) {
-    console.warn('[aibox] port', AIBOX_PORT, 'not ready after timeout, loading anyway')
-  }
-  createWindow()
-})
-
-// ---------- IPC handlers ----------
-
-function confPath() {
-  return path.join(app.getPath('userData'), 'aibox.conf.json')
-}
-
-ipcMain.handle('config:get', async () => {
-  try {
-    const raw = await import('fs').then(f => f.readFileSync(confPath(), 'utf-8'))
-    return JSON.parse(raw)
-  } catch { return {} }
-})
-
-ipcMain.handle('config:save', async (_e, data: Record<string, unknown>) => {
-  const { writeFileSync } = await import('fs')
-  writeFileSync(confPath(), JSON.stringify(data, null, 1), 'utf-8')
-  return true
-})

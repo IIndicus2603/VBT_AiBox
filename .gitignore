@@ -78,3 +78,10 @@ d3.py
 d4.py
 d.txt
 c.txt
+# ===== Backup truoc khi refactor =====
+_backup_*/
+
+# ===== Runtime data Telegram (ten nguoi, IP, cam, canh bao) — KHONG push len public =====
+tg_alarms.jsonl
+tg_person_log.jsonl
+tg_person_today.json

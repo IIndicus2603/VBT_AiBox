@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Không kết nối được máy chủ</title>
+<!-- Trang nay CHI dung trong app Electron (client). Duoc main.ts nap khi do cong
+     sang BE that bai. Trong trinh duyet thi aiboxSetOrigin khong ton tai -> chi bao. -->
+<style>
+  html,body{margin:0;height:100%;background:#070a10;color:#e6ebf0;
+    font-family:Barlow,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{height:100%;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:18px;padding:24px;text-align:center}
+  .dot{width:52px;height:52px;border-radius:50%;border:2px solid #ff4d4f;
+    box-shadow:0 0 0 8px rgba(255,77,79,.10)}
+  h1{font-size:22px;font-weight:600;margin:0;letter-spacing:.2px}
+  p{margin:0;color:#8b9aa8;font-size:13.5px;line-height:1.6}
+  b{color:#d9a233;font-family:'JetBrains Mono',monospace;font-weight:500}
+  form{display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;justify-content:center}
+  input{width:290px;height:40px;padding:0 14px;border-radius:10px;background:#131a24;
+    border:1px solid #262f38;color:#e6ebf0;font-family:'JetBrains Mono',monospace;
+    font-size:13px;outline:none}
+  input:focus{border-color:#d9a233}
+  button{height:40px;padding:0 20px;border:0;border-radius:10px;cursor:pointer;
+    background:linear-gradient(165deg,#e5bc63,#d9a233 30%,#c48a29 58%,#a8722a 78%,#d19c33);
+    color:#1a1206;font-weight:700;font-size:13px}
+  button:active{transform:translateY(1px)}
+  #err{color:#ff7a7c;font-size:12.5px;min-height:16px;font-family:'JetBrains Mono',monospace}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="dot"></div>
+    <h1>Không kết nối được máy chủ</h1>
+    <p>
+      App đang tìm máy chủ ở <b id="cur">…</b><br>
+      Kiểm tra máy chủ đã bật chưa, hoặc sửa địa chỉ bên dưới rồi bấm Lưu.
+    </p>
+    <form id="f">
+      <input id="ip" placeholder="http://192.168.21.34:8090" autocomplete="off" spellcheck="false">
+      <button type="submit">Lưu &amp; thử lại</button>
+    </form>
+    <p id="err"></p>
+  </div>
+<script>
+  // AIBOX_SERVER = URL đầy đủ có cổng (AIBOX_ORIGIN đã bị cắt cổng cho giao diện dùng).
+  const cur = globalThis.AIBOX_SERVER || globalThis.AIBOX_ORIGIN || '(chưa có)';
+  document.getElementById('cur').textContent = cur;
+  document.getElementById('ip').value = cur === '(chưa có)' ? '' : cur;
+  document.getElementById('f').onsubmit = async e => {
+    e.preventDefault();
+    const err = document.getElementById('err');
+    const v = document.getElementById('ip').value.trim();
+    if (!globalThis.aiboxSetOrigin) {
+      err.textContent = 'Chỉ đổi được trong app, không đổi được từ trình duyệt.';
+      return;
+    }
+    err.textContent = 'Đang lưu…';
+    const r = await globalThis.aiboxSetOrigin(v);
+    if (!r || !r.ok) err.textContent = (r && r.err) || 'Địa chỉ không hợp lệ';
+    // hợp lệ thì main.ts tự khởi động lại app
+  };
+</script>
+</body>
+</html>

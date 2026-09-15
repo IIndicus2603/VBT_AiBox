@@ -3,10 +3,22 @@
 Cầu nối (bridge) giữa box camera UNV và UI web: proxy digest-auth, nhận cảnh báo
 (alarm), đồng bộ stream sang go2rtc, gửi ảnh/clip + lệnh qua Telegram.
 
-- `aibox.py` — backend, **chỉ dùng stdlib**, serve UI ở `:8090`
-- `ui/` — web UI (**source of truth**), aibox.py serve trực tiếp
-- `electron-app/` — chỉ dùng để **đóng gói** thành app desktop
-- `go2rtc.exe` + `go2rtc.yaml` — server stream, chạy ở `:1984`
+## Mô hình: 1 BE + N client
+
+```
+MÁY CHỦ (BE)     aibox.py :8090  +  go2rtc :1984  +  box trong LAN
+                        ▲
+                        │  LAN
+                        ▼
+MÁY KHÁCH (FE)   app Electron — đóng gói sẵn ui/, tự gọi API về BE
+```
+
+- `aibox.py` — backend (**chỉ dùng stdlib**), serve UI ở `:8090`. Chạy trên **máy chủ**
+- `ui/` — web UI (**source of truth**), dùng cho **cả hai**: BE serve trực tiếp, và
+  đóng gói vào app client. Sửa ở đây là cả hai bên thấy
+- `electron-app/` — client mỏng: mở `ui/` từ `127.0.0.1` nội bộ rồi gọi API về BE.
+  **Không** chạy backend, **không** chứa `go2rtc.yaml`
+- `go2rtc.exe` + `go2rtc.yaml` — server stream ở `:1984`, chạy trên **máy chủ**
 
 ---
 
@@ -64,39 +76,56 @@ Electron tự spawn `py aibox.py`, đợi `:8090` rồi mở cửa sổ kiosk k�
 
 ## 3. Build
 
-### Build backend (PyInstaller → `dist/aibox/`)
+Hai nửa build **độc lập**: BE ở lại máy chủ, FE gửi cho máy khách.
+
+### BE — build trên MÁY CHỦ
 
 ```powershell
 cd electron-app
 npm run build:backend
 ```
 
-Lệnh này `cd ..` rồi chạy PyInstaller với `--add-binary go2rtc.exe` và
-`--add-data ui;ui`, đầu ra ở `dist/aibox/`.
+`cd ..` rồi chạy PyInstaller với `--add-binary go2rtc.exe` và `--add-data ui;ui`.
+Đầu ra `dist/aibox/`.
 
-### Build trọn bộ ra file cài đặt
+> **Không gửi thư mục này cho ai.** Nó chứa `go2rtc.yaml` — tức mật khẩu toàn bộ
+> camera. BE chỉ nằm trên máy chủ.
+
+### Client — build để GỬI CHO MÁY KHÁCH
 
 ```powershell
 cd electron-app
-npm run build:exe
+npm run build:client
 ```
 
-Gồm 3 bước: `build:backend` → `tsc && vite build` → `electron-builder --win`.
+`tsc` (main + preload → `dist-electron/`) rồi `electron-builder --win`. `ui/` được
+copy vào `resources/ui` qua `extraResources`; **không** kèm backend nên bộ cài nhẹ
+và không mang theo credential nào.
 
 Đầu ra:
 
 ```
 electron-app/out4/<version>/Vibotics AI Smart Box-<version>-Setup.exe
+electron-app/out4/<version>/win-unpacked/          <- chạy trực tiếp, không cần cài
 ```
 
-`electron-app/out4/<version>/win-unpacked/` là bản chạy trực tiếp, không cần cài.
+### Đổi địa chỉ BE — không cần build lại
 
-### Các script khác
+```
+%APPDATA%\unv-smartbox-desktop\server.txt          ->  http://192.168.21.34:8090
+```
+
+Chuyển BE sang máy 24/7 thì sửa file này trên từng máy khách (hoặc bấm trong app).
+Không nối được máy chủ thì app tự hiện trang nhập địa chỉ (`ui/offline.html`).
+
+### Script
 
 | Lệnh | Việc |
 |---|---|
-| `npm run build` | `tsc && vite build && electron-builder` (mọi nền tảng) |
-| `npm run build:win` | như trên, chỉ Windows |
+| `npm run dev` | `tsc && electron .` — mở app dạng cửa sổ (dev không bật kiosk) |
+| `npm run build:client` | build app gửi cho máy khách |
+| `npm run build:backend` | build BE cho máy chủ |
+| `npm run build:win` | alias của `build:client` |
 
 ---
 
@@ -113,6 +142,14 @@ py test_add_channel.py
 py test_edit_channel.py
 py test_tg_filter.py
 ```
+
+```powershell
+node test_video_retry.mjs        # can Node 22.7+
+```
+
+Chốt luật retry của tile: một cú rớt mạng không được hiện OFFLINE ngay — player
+phải thử lại `maxRetry` (mặc định 3) lần liên tiếp không có hình mới báo lỗi.
+Xem `ui/video-stream.js`.
 
 ---
 

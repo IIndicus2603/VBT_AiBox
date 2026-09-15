@@ -34,7 +34,10 @@ CONN = {'host': os.environ.get('AIBOX_HOST', ''),
         # Telegram: gui anh/video + thong tin canh bao vao NHIEU nhom (tick chon).
         # Token = secret, dung commit. tg_chats = list chat_id dang chon gui den.
         'tg_token': os.environ.get('TG_BOT_TOKEN', ''),
-        'tg_chats': [c.strip() for c in os.environ.get('TG_CHAT_IDS', '').split(',') if c.strip()]}
+        'tg_chats': [c.strip() for c in os.environ.get('TG_CHAT_IDS', '').split(',') if c.strip()],
+        # tg_setup: chat_id -> {'mode':'all'|'rule', 'name':ten, 'algos':[algo_model]}.
+        # Nhom KHONG co mat o day = chua /setup = khong nhan alarm nao.
+        'tg_setup': {}}
 
 
 def load_conf():
@@ -51,6 +54,11 @@ def load_conf():
         CONN['tg_chats'] = [str(c).strip() for c in CONN['tg_chats'] if str(c).strip()]
         if not CONN['tg_chats'] and str(disk.get('tg_chat', '')).strip():
             CONN['tg_chats'] = [str(disk['tg_chat']).strip()]
+        # tg_setup luon la dict[str, dict]; bo entry rac de _tg_targets khong vo.
+        if not isinstance(CONN.get('tg_setup'), dict):
+            CONN['tg_setup'] = {}
+        CONN['tg_setup'] = {str(k): v for k, v in CONN['tg_setup'].items()
+                            if isinstance(v, dict)}
     except (OSError, ValueError, json.JSONDecodeError):
         pass
 
@@ -299,8 +307,14 @@ def _creds_from_go2rtc(streams):
     Nen ham nay la FALLBACK cho firmware tra URL TRAN khong credential: _with_creds()
     uu tien credential co san trong rtsp truoc, chi dung den day khi URL khong co '@'.
 
-    He qua bao mat: /aibox/channel/list lam lo mat khau camera dang cleartext. Chanh
-    duoc la nho _local_only() — moi route ngoai /alarm deu chi nhan localhost."""
+    He qua bao mat: /aibox/channel/list lam lo mat khau camera dang cleartext. Truoc
+    day chan duoc nho _local_only() (moi route ngoai /alarm chi nhan localhost).
+    _local_only() gio DA MO LAN -> mat khau camera lo cho ca mang.
+
+    HAI duong ro ri, ca hai deu tra URL tran:
+      1. GET /aibox/channel/list  (route nay, di qua box)
+      2. GET :1984/api/streams    (go2rtc tra thang tu go2rtc.yaml)
+    Bit lai thi mask o ca hai; khong lien quan gi den dang nhap."""
     out = {}
     for o in (streams or {}).values():
         for p in (o.get('producers') or []):
@@ -472,28 +486,44 @@ def _algo_vi(ev):
 def _publish(ev):
     line = f'data: {json.dumps(ev, ensure_ascii=False)}\n\n'.encode()
     with _subs_lock:
-        dead = [q for q in _subs if q.full()]
         for q in _subs:
-            if q not in dead:
+            # Queue day = client doc cham hon box day (AreaRuleData ~1 dong/giay,
+            # 200 slot chi vai phut la tran). TRUOC DAY huy dang ky luon: vong _sse
+            # van chay va van gui ': ping' moi 20s nen EventSource khong he biet la
+            # bi ngat -> khong reconnect -> tab Nhat ky DUNG YEN VINH VIEN va tuong
+            # nhu "cham hon aibox". Vut tin CU, giu dang ky: thieu vai AreaRuleData
+            # khong sao (badge chi can so cuoi cung), mat ket noi moi la chet.
+            while q.full():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+            try:
                 q.put_nowait(line)
-        for q in dead:
-            _subs.remove(q)
+            except queue.Full:
+                pass
     # Day ra ngoai (Telegram...) KHONG duoc chan HTTP handler cua box -> thread rieng.
     if CONN.get('tg_token') and CONN.get('tg_chats'):
         threading.Thread(target=_tg_forward, args=(ev,), daemon=True).start()
 
 
 # ------------------------------------------------------------------ telegram
-# video co the den TRUOC hoac SAU alarm JSON (2 POST rieng, noi bang video_uuid).
-# _tg_pending giu caption cho video den sau.
-_tg_pending = {}
 # Registry ben vung: chat_id -> {id,title,type} moi nhom bot TUNG thay (qua
 # getUpdates). Telegram KHONG co API "list groups cua bot" -> phai tu nho lay.
 _TG_SEEN = os.path.join(DATA, 'tg_groups.json')
+# Nguon clip cua tung alarm da gui, de /video <id> keo lai duoc. Append-only (chi
+# ghi them, khong sua) -> khong can lock. Xem _tg_log_tail.
+_TG_ALARM_LOG = os.path.join(DATA, 'tg_alarms.jsonl')
+_TG_SEQ = 0                      # so thu tu alarm, noi tiep tu dong cuoi log
 # Lock chung cho MỌI getUpdates (poll + discover). Telegram chi cho 1 getUpdates
 # dong thoi moi token — 2 request song song -> 409 Conflict. Poll long-poll giu
 # lock lau, discover chien lock ngan; ai toi truoc thi duoc goi.
 _TG_UPD_LOCK = threading.Lock()
+# Nghi giua 2 lan getUpdates. Telegram van tinh phien long-poll TRUOC la dang chay
+# vai giay sau khi no tra ve, nen ban lien tuc = 409 xen ke thanh cong (do that tren
+# token nay: nghi 1s -> 2/4 lan 409; nghi 4s -> 4/4 ok). Khong nghi thi bot chi poll
+# duoc ~18s/lan (8s long-poll + 409 + ngu 10s) -> lenh /setup, /video tre toi 20s.
+_TG_POLL_GAP = 4
 
 
 def _tg_load_seen():
@@ -517,6 +547,50 @@ def _tg_save_seen(seen):
 # Cap nhat moi khi box day AreaRuleData (dem nguoi real-time, ~1 dong/giay). Bot dung
 # de tra loi /countpeople.
 _AREA = {}
+
+# ---- chong "lay lai hang cu" sau khi BE mat ket noi voi box ------------------
+# Khi link box<->BE dut, box TAM GIU alarm trong bo nho roi khi noi lai se day lai
+# CA HANG CU trong vai giay (bang chung: 09-14 08:25:12 co ~84 alarm capture_time
+# 08:18-08:20 day trong 4s). BE chi nen nhan alarm moi nhat, bo hang cu.
+# Cach danh gia "cu": box KHONG dong ho voi PC (tre ~300-1500s, troi) nen khong dung
+# moc cung dinh. Tu hoc: _BOX_LAG = tre trung binh (luc nhan - capture_time) cua cac
+# alarm BINH THUONG. Chi khi PHA'T HIEN dut noi (im lang > _BOX_GAP) moi ap luat: loai
+# alarm nao tre hon _BOX_LAG + _BOX_SLACK (la hang cu), giu cai moi nhat.
+_BOX_LOCK = threading.Lock()
+_BOX_GAP = 90          # giay im lang -> tinh la tung mat ket noi
+_BOX_SLACK = 300       # du qua muc binh thuong bao nhieu giay thi tinh la hang cu
+_BOX_LAG = None        # tre trung binh (EWMA), tu hoc tu cac alarm nhan
+_BOX_AT = 0.0          # lan cuoi nhan duoc alarm (dong ho PC)
+_BOX_RELINK = 0.0      # dang trong cua so "noi lai" (dang xa hang cu)
+_BOX_DROP = 0          # dem alarm da bo de in log 1 lan
+
+
+def _box_lag_gate(ct):
+    """Nhan alarm co capture_time=ct (epoch). Tra True = nen GIU (moi), False = nhan
+    duoc alarm cu sau khi vua mat ket noi -> bo. Goi truoc khi luu/jsonl/publish."""
+    global _BOX_LAG, _BOX_AT, _BOX_RELINK, _BOX_DROP
+    now = time.time()
+    with _BOX_LOCK:
+        gap = now - _BOX_AT            # kiem TRA TRUOC khi cap nhat _BOX_AT
+        _BOX_AT = now
+        lag = now - ct
+        # Dang trong cua so xa hang cu (vua noi lai / con alarm cu dang toi)?
+        relink = (now - _BOX_RELINK < _BOX_GAP + 30)
+        if gap > _BOX_GAP and not relink:
+            _BOX_RELINK = now          # im lang qua _BOX_GAP -> vua noi lai
+            relink = True
+        if relink and _BOX_LAG is not None:
+            # Dang xa hang cu: chi giu alarm co tre gan muc binh thuong (cai moi nhat),
+            # bo phan cu hon. Moi lan bo lai keo dai cua so cho het luot day.
+            if lag > _BOX_LAG + _BOX_SLACK:
+                _BOX_RELINK = now
+                _BOX_DROP += 1
+                return False
+        # Alarm moi/chanh thuong: hoc tre binh thuong. EWMA nhanh de theo sau do tre
+        # troi, bo qua jitter tung alarm.
+        if lag >= 0:
+            _BOX_LAG = lag if _BOX_LAG is None else (0.6 * _BOX_LAG + 0.4 * lag)
+        return True
 
 
 def _area_last(channel_id):
@@ -707,8 +781,69 @@ def _tg_countpeople(args, chat):
     return True, None
 
 
+def _tg_setup(args, chat):
+    """Cau hinh cho CHINH nhom go lenh. Chua /setup = nhom do khong nhan alarm nao,
+    du da tick o tab Cau hinh tren web. Luu vao aibox.conf.json."""
+    a = args.strip()
+    setups = CONN.setdefault('tg_setup', {})
+    cur = setups.get(str(chat)) or {}
+    low = a.lower()
+    if not a:
+        if cur.get('mode') == 'all':
+            st = 'gui TAT CA alarm'
+        elif cur.get('mode') == 'rule':
+            st = f"setup '{cur.get('name')}' — chua gui alarm nao"
+        else:
+            st = 'CHUA setup — khong nhan alarm nao'
+        _tg_post('sendMessage', chat, {'text': (
+            f'⚙️ Nhóm này: {st}\n\n'
+            '/setup all — gửi tất cả alarm\n'
+            '/setup off — tắt, không nhận gì\n'
+            '/setup <tên> — tạo setup rỗng (vd /setup c27)\n'
+            '/video <id> — gửi lại clip của alarm #id')})
+        return True, None
+    if low in ('off', 'tat', 'tắt'):
+        setups.pop(str(chat), None)
+        save_conf()
+        _tg_post('sendMessage', chat, {'text': '🔕 Đã tắt — nhóm này không nhận alarm nào.'})
+        return True, None
+    if low == 'all':
+        setups[str(chat)] = {'mode': 'all', 'name': 'all', 'algos': []}
+        msg = '🔔 Đã bật — nhóm này nhận TẤT CẢ alarm.'
+    else:
+        setups[str(chat)] = {'mode': 'rule', 'name': a, 'algos': []}
+        msg = (f"⚙️ Đã tạo setup '{a}' cho nhóm này.\n"
+               'Hiện chưa gửi alarm nào.')
+    save_conf()
+    _tg_post('sendMessage', chat, {'text': msg})
+    return True, None
+
+
+def _tg_send_video(args, chat):
+    """Tra loi /video <id>: gui lai clip cua alarm do. Uu tien file box day ve (neu
+    co), khong thi KEO lai tu video_url. Box chi giu clip mot khoang thoi gian nen
+    het han thi bao thang, khong gui nham clip rong."""
+    aid = args.strip().lstrip('#')
+    if not aid:
+        _tg_post('sendMessage', chat, {'text':
+                 'Dùng: /video <id> — id nằm ở dòng 🆔 của tin alarm.'})
+        return True, None
+    rec = next((r for r in _tg_log_tail() if str(r.get('id')) == aid), None)
+    if not rec:
+        _tg_post('sendMessage', chat, {'text': f'Không tìm thấy alarm #{aid}.'})
+        return True, None
+    f = _tg_video(rec.get('file') or '') or _tg_video_url(rec)
+    if not f:
+        print(f'[tg] /video #{aid}: box khong tra clip')
+        _tg_post('sendMessage', chat, {'text': f'Clip của alarm #{aid} đã hết hạn trên box.'})
+        return True, None
+    print(f'[tg] /video #{aid}: gui clip {len(f[1])} bytes')
+    _tg_post('sendVideo', chat, {'caption': rec.get('cap') or f'Alarm #{aid}'}, {'video': f})
+    return True, None
+
+
 def _tg_handle_command(text, chat):
-    """Xu ly lenh tu Telegram: bat dau bang '/'. Hien chi co /countpeople."""
+    """Xu ly lenh tu Telegram: bat dau bang '/'. /countpeople, /setup, /video."""
     body = text.strip()
     if not body.startswith('/'):
         return False
@@ -716,6 +851,12 @@ def _tg_handle_command(text, chat):
     cmd = cmd.lower()
     if cmd in ('/countpeople', '/count_people', '/count'):
         _tg_countpeople(rest, chat)
+        return True
+    if cmd == '/setup':
+        _tg_setup(rest, chat)
+        return True
+    if cmd == '/video':
+        _tg_send_video(rest, chat)
         return True
     return False
 
@@ -744,7 +885,8 @@ def _tg_poll():
     """Vong lap getUpdates lang nghe lenh tu nhom. Khi gap /countpeople thi tra loi
     ngay trong chat do. Dung offset de confirm update da xu ly -> khong lap lenh.
     Vua gop chat vao registry (dung chung _tg_collect) de nhom moi khong bi mat.
-    Dung _TG_UPD_LOCK de khong 409 voi discover. That bai thi ngu 10s roi thu lai."""
+    Dung _TG_UPD_LOCK de khong 409 voi discover. That bai thi ngu 10s roi thu lai.
+    Moi vong thanh cong nghi _TG_POLL_GAP giay — xem comment o _TG_POLL_GAP."""
     offset = 0
     while True:
         tok = CONN.get('tg_token')
@@ -773,14 +915,15 @@ def _tg_poll():
                     _tg_handle_command(msg.get('text') or '', str(chat))
             if changed:
                 _tg_save_seen(seen)
+            time.sleep(_TG_POLL_GAP)     # khong nghi -> lan ke tiep chac chan 409
         except Exception as e:
             print('[tg] poll loi:', e)
             time.sleep(10)
 
 
-def _tg_post(method, chat, fields=None, files=None):
+def _tg_post(method, chat, fields=None, files=None, _retry=0):
     """multipart/form-data -> Telegram Bot API, gui toi 1 chat. Stdlib only.
-    Tra ve (ok: bool, err: str|None)."""
+    Tra ve (ok: bool, err: str|None). _retry = so lan da thu lai sau khi bi 429."""
     tok = CONN.get('tg_token')
     if not tok or not chat:
         return False, 'Chua dien bot token + chat id'
@@ -808,12 +951,21 @@ def _tg_post(method, chat, fields=None, files=None):
     except HTTPError as e:                       # Telegram tra HTTP 4xx/5xx (vd 400)
         # Body chua description chinh xac ("chat not found", "bot was blocked"...)
         # — khong in chung chung "HTTP Error 400: Bad Request" ma mat goc benh.
-        d = ''
+        body = {}
         try:
             body = json.loads(e.read().decode('utf-8', 'replace') or b'{}')
-            d = body.get('description') or ''
         except Exception:
-            d = ''
+            body = {}
+        # 429 = gui qua tay (Telegram gioi han ~20 tin/nhom/phut, ma box day alarm
+        # lien tuc). retry_after noi ro doi bao lau; KHONG doi thi anh/clip mat han
+        # — /video lay duoc clip 5MB tu box xong van khong gui duoc vi ly do nay.
+        # Chi thu lai 1 lan: alarm tran ngap ma doi mai thi treo het thread.
+        if body.get('error_code') == 429 and _retry < 1:
+            wait = min(int((body.get('parameters') or {}).get('retry_after') or 3), 30)
+            print(f'[tg] {method} bi gioi han toc do -> doi {wait}s gui lai')
+            time.sleep(wait)
+            return _tg_post(method, chat, fields, files, _retry + 1)
+        d = body.get('description') or ''
         err = d or str(e)
         print('[tg]', method, 'that bai:', err)
         return False, err
@@ -822,23 +974,46 @@ def _tg_post(method, chat, fields=None, files=None):
         return False, str(e)
 
 
-def _tg_send_all(method, fields=None, files=None):
-    """Gui 1 media/text den TAT CA nhom dang chon (tg_chats)."""
+def _tg_targets(ev=None, rule_send=False):
+    """Nhom DUOC gui alarm nay: phai /setup trong CHINH nhom do. 'all' = gui het;
+    'rule' = che do c27, chi gui khi rule_send (ket qua _c27_decide, tinh 1 lan
+    cho ca event vi no co side effect ghi lich su).
+    MOT cho duy nhat dinh nghia luat nay — _tg_forward va _tg_send_all deu goi day."""
+    out = []
+    for c in CONN.get('tg_chats') or []:
+        m = ((CONN.get('tg_setup') or {}).get(str(c)) or {}).get('mode')
+        if m == 'all' or (m == 'rule' and ev is not None and rule_send):
+            out.append(c)
+    return out
+
+
+def _tg_send_all(method, fields=None, files=None, chats=None):
+    """Gui 1 media/text den cac nhom da /setup. chats=None -> tu loc theo tg_chats
+    (khong co ev nen chi nhom mode 'all' lot qua)."""
     if not CONN.get('tg_token'):
         return
-    for c in CONN.get('tg_chats') or []:
+    for c in (_tg_targets() if chats is None else chats):
         _tg_post(method, c, fields, files)
 
 
-def _tg_caption(ev):
+def _tg_caption(ev, aid=None, title=None):
     ts = ev.get('ts')
     when = time.strftime('%H:%M:%S %d/%m/%Y', time.localtime(ts)) if ts else ''
     # Dong dau: 🚨 + ten hanh vi tieng Viet (dich tu algo_model). Ghi ro "behavior".
-    parts = [f"\U0001f6a8 {_algo_vi(ev)}"]
-    # Chi tiet doi tuong phat hien: capture_info moi phan tu = 1 doi tuong.
-    n_obj = len(ev.get('capture_info') or [])
+    # title = chu de do che do c27 dat lai ('Sai đồng phục', '<ten> đã đi muộn'...).
+    parts = [f"\U0001f6a8 {title or _algo_vi(ev)}"]
+    # Chi tiet doi tuong phat hien: capture_info moi phan tu = 1 doi tuong. Alarm
+    # nhan dien mat (type 4/5) KHONG co capture_info -> dem theo compare_results.
+    person = ev.get('person') or {}
+    n_obj = len(ev.get('capture_info') or []) or (1 if person else 0)
     if n_obj:
-        parts.append(f"\U0001f465 {n_obj} doi tuong phat hien")
+        who = str(person.get('name') or '').strip()
+        sim = person.get('similarity')
+        if who and sim is not None:
+            who = f'{who} {sim}%'
+        # Khong co ten -> noi ro "khong nhan dien duoc", dung de trong gay hieu nham.
+        parts.append(f"\U0001f465 {n_obj} doi tuong phat hien - "
+                     f"{who or 'khong nhan dien duoc'}")
     if ev.get('channel_name'):
         parts.append(f"\U0001f4f7 Camera {ev['channel_name']}")
     if ev.get('ipc_addr'):
@@ -847,6 +1022,8 @@ def _tg_caption(ev):
         parts.append(f"\U0001f465 {ev['area_num']} nguoi trong vung")
     if when:
         parts.append(f"\U0001f552 {when}")
+    if aid is not None:
+        parts.append(f"\U0001f194 #{aid}")           # /video <id> de gui lai clip
     return '\n'.join(parts)
 
 
@@ -881,7 +1058,7 @@ def _tg_video_url(ev):
     """Kéo clip từ box qua video_url (dang /aibox/video?ChlId=..&StartTime=..&EndTime=..).
     Box KHONG push file video — chi cung cap video_url de KEO ve (clip cat theo khoang
     thoi gian, ~1.4MB). Dung digest auth nhu _tg_image. Tra (ten, bytes, ctype) hoac None."""
-    u = ev.get('video_url')
+    u = ev.get('video_url') or ev.get('url')   # log alarm ghi key 'url'
     if not u:
         return None
     q = u.split('?', 1)[-1] if '?' in u else ''
@@ -900,53 +1077,209 @@ def _tg_video_url(ev):
     return None
 
 
-def _tg_forward(ev):
-    """Chay trong thread rieng. kind=alarm gui caption+anh (+video neu da den);
-    kind=video gui clip noi theo video_uuid cho caption da luu. Gui toi moi nhom
-    da tick trong tg_chats."""
+def _tg_log_tail(nbytes=262144):
+    """Cac dong cuoi cua _TG_ALARM_LOG, moi nhat truoc. Chi doc duoi file: id can tim
+    va clip cua no luon nam trong nhom alarm moi nhat (alarm cu thi box cung het giu
+    clip). Dong dau bi cat lam -> json loi -> bo qua."""
     try:
-        # Loc truoc: keepalive (type 6) va dem nguoi (AreaRuleData) khong can gui Telegram
-        if ev.get('kind') == 'alarm':
-            if ev.get('type') == 6 or ev.get('algo_model') == 'AreaRuleData':
-                return
-            cap = _tg_caption(ev)
-            # Uu tien video: file box push truoc (ev['video']) roi den video_url
-            # (box KHONG push file, chi cho KEO clip ve). Neu co video thi gui video.
-            vid = ev.get('video')
-            f = _tg_video(vid) if vid else None
-            if not f:
-                f = _tg_video_url(ev)
-            if f:
-                print(f'[tg] gui video cho {ev.get("algo_model")} ({len(f[1])} bytes)')
-                _tg_send_all('sendVideo', {'caption': cap}, {'video': f})
+        with open(_TG_ALARM_LOG, 'rb') as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - nbytes))
+            buf = f.read()
+    except OSError:
+        return []
+    out = []
+    for ln in buf.split(b'\n'):
+        if ln.strip():
+            try:
+                out.append(json.loads(ln))
+            except (ValueError, UnicodeDecodeError):
+                pass
+    out.reverse()
+    return out
+
+
+def _tg_next_id():
+    """So thu tu alarm, tang dan. Lan dau trong phien thi noi tiep tu dong cuoi log."""
+    global _TG_SEQ
+    if not _TG_SEQ:
+        _TG_SEQ = max([r.get('id') or 0 for r in _tg_log_tail()] or [0])
+    _TG_SEQ += 1
+    return _TG_SEQ
+
+
+def _tg_alarm_log(aid, ev, cap):
+    """Ghi nguon clip cua alarm de /video <id> keo lai duoc. Append-only, khong lock."""
+    rec = {'id': aid, 'ts': ev.get('ts') or int(time.time()), 'cap': cap,
+           'url': ev.get('video_url') or '', 'file': ev.get('video') or '',
+           'algo': ev.get('algo_model') or ''}
+    try:
+        with open(_TG_ALARM_LOG, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + '\n')
+    except OSError as e:
+        print('[tg] khong ghi duoc alarm log:', e)
+
+
+# ------------------------------------------------- che do /setup <ten>  (c27)
+# Cham cong theo thu vien nguoi 'Default List'. State cua NGAY o
+# DATA/tg_person_today.json — doi ngay thi reset (moc 00:00 nguoi dung da chon).
+# Lich su xuat hien ghi append-only vao DATA/tg_person_log.jsonl: muon biet "lan 1
+# o camera nao, lan 2 o dau" thi loc file theo person roi sap theo ts.
+_C27_LOCK = threading.Lock()
+_C27_TODAY = os.path.join(DATA, 'tg_person_today.json')
+_C27_LOG = os.path.join(DATA, 'tg_person_log.jsonl')
+_C27_LIB = 'Default List'
+_C27_DEADLINE = 8 * 3600 + 30 * 60        # 08:30 — truoc gio nay khong tinh di muon
+_C27_CLOSE = 17 * 3600 + 30 * 60          # 17:30 — sau gio nay gui ca alarm vo danh
+
+
+def _c27_hm(ts):
+    """(giay-trong-ngay, 'YYYY-MM-DD', epoch 08:30 cua ngay do) theo gio may."""
+    t = time.localtime(ts or time.time())
+    return (t.tm_hour * 3600 + t.tm_min * 60, time.strftime('%Y-%m-%d', t),
+            time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 8, 30, 0, 0, 0, -1)))
+
+
+def _c27_load(day):
+    """State cua `day`. File mang ngay khac (hoac hong) -> state trang = reset."""
+    try:
+        with open(_C27_TODAY, encoding='utf-8') as f:
+            d = json.load(f)
+        if isinstance(d, dict) and d.get('date') == day:
+            for k, zero in (('first', {}), ('late', []), ('uniform', [])):
+                if not isinstance(d.get(k), type(zero)):
+                    d[k] = zero
+            return d
+    except (OSError, ValueError):
+        pass
+    return {'date': day, 'first': {}, 'late': [], 'uniform': []}
+
+
+def _c27_save(st):
+    try:
+        with open(_C27_TODAY, 'w', encoding='utf-8') as f:
+            json.dump(st, f, ensure_ascii=False, indent=1)
+    except OSError as e:
+        print('[c27] khong luu duoc state:', e)
+
+
+def _c27_person(ev):
+    """Ten nguoi nhan dien duoc TRONG thu vien, hoac '' neu vo danh / khac thu vien."""
+    p = ev.get('person') or {}
+    name = str(p.get('name') or '').strip()
+    lib = str(p.get('lib') or '').strip()
+    return '' if (not name or (lib and lib != _C27_LIB)) else name
+
+
+def _c27_decide(ev):
+    """Quyet dinh cho che do /setup <ten>. Tra (title, co_gui, mark).
+      title = chu de thay cho ten algo, None = giu nguyen
+      mark  = ('late'|'uniform', ten) — CHI goi _c27_mark sau khi gui that, de mot
+              alarm bi mat anh khong danh dau oan roi chan nguoi do ca ngay.
+    Moi lan nhan dien duoc deu ghi lich su xuat hien + lan dau tien trong ngay, KE CA
+    khi alarm nay khong duoc gui — nguoi do van da co mat, xet di muon phai biet."""
+    algo = ev.get('algo_model') or ''
+    ts = int(ev.get('ts') or time.time())
+    sec, day, deadline = _c27_hm(ts)
+    person = _c27_person(ev)
+    with _C27_LOCK:
+        st = _c27_load(day)
+        changed = False
+        if person:
+            try:
+                with open(_C27_LOG, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(
+                        {'ts': ts, 'day': day, 'person': person,
+                         'cam': ev.get('channel_name') or '', 'algo': algo,
+                         'sim': (ev.get('person') or {}).get('similarity')},
+                        ensure_ascii=False) + '\n')
+            except OSError as e:
+                print('[c27] khong ghi duoc lich su:', e)
+            if person not in st['first']:
+                st['first'][person] = {'ts': ts, 'cam': ev.get('channel_name') or '',
+                                       'algo': algo}
+                changed = True
+        # EnterArea va Absence(OffDutyDetectionAlarm): LUON gui + doi ten. Hai loai
+        # nay khong bao gio kem nhan dien nguoi (0/322 ban ghi OffDuty co
+        # compare_results) nen khong the theo luat "chi gui khi biet la ai".
+        if algo == 'EnterArea':
+            title, send, mark = 'Xâm phạm khu vực', True, None
+        elif algo == 'OffDutyDetectionAlarm':
+            title, send, mark = '1 người đã ra khỏi phòng 15 phút trước', True, None
+        elif algo == 'LineDetectorCrossed':
+            if sec < _C27_DEADLINE:
+                # 00:00-08:30: im lang (van ghi lan xuat hien dau de xet di muon)
+                title, send, mark = None, False, None
+            elif sec >= _C27_CLOSE:
+                title, send, mark = None, True, None      # sau 17:30: gui binh thuong
             else:
-                img = _tg_image(ev)
-                if img:
-                    print(f'[tg] gui anh cho {ev.get("algo_model")} ({len(img[1])} bytes)')
-                    _tg_send_all('sendPhoto', {'caption': cap}, {'photo': img})
+                # 08:30-17:30: KHONG gui tin "vuot vach". Chi bao di muon khi lan
+                # xuat hien DAU TIEN trong ngay la SAU 08:30, 1 lan/nguoi/ngay.
+                first = st['first'].get(person) if person else None
+                late = bool(person) and person not in st['late'] \
+                    and bool(first) and first['ts'] >= deadline
+                if late:
+                    title, send, mark = f'{person} đã đi muộn', True, ('late', person)
                 else:
-                    # Khong co media -> IM. Gui text khong anh/video chi lam loang
-                    # nhom (alarm loi, box chua kip cat clip). Caption con o log.
-                    print(f'[tg] bo qua (khong co anh/video): '
-                          f'{ev.get("algo_model")}')
-            # Chi doi clip push den SAU khi khong kéo duoc video tu url (box co the
-            # gui file rieng). Da gui video roi thi khong dang ky pending -> khong trung.
-            uuid = ev.get('video_uuid')
-            if uuid and not f:
-                _tg_pending[uuid] = cap                 # doi clip den sau
-                while len(_tg_pending) > 32:
-                    _tg_pending.pop(next(iter(_tg_pending)))
-        elif ev.get('kind') == 'video':
-            # Chi gui khi alarm cua no da den TRUOC (co pending caption). Alarm den sau
-            # thi self-no da gui clip kem caption -> gui o day la trung. Alarm bi loc
-            # (keepalive / dem nguoi) khong bao gio dang ky pending -> clip cung im.
-            uuid = ev.get('video_uuid')
-            if uuid not in _tg_pending:
-                return
-            cap = _tg_pending.pop(uuid)
-            f = _tg_video(ev.get('file') or '')
-            if f:
-                _tg_send_all('sendVideo', {'caption': cap}, {'video': f})
+                    title, send, mark = None, False, None
+        elif algo == 'WorkClothesAlarm':
+            # Chi bao khi biet la ai, va 1 lan/nguoi/ngay.
+            if person and person not in st['uniform']:
+                title, send, mark = 'Sai đồng phục', True, ('uniform', person)
+            else:
+                title, send, mark = 'Sai đồng phục', False, None
+        else:
+            # Con lai: truoc 17:30 chi gui khi nhan dien duoc nguoi; sau 17:30 gui het.
+            title, send, mark = None, (bool(person) or sec >= _C27_CLOSE), None
+        if changed:
+            _c27_save(st)
+    return title, send, mark
+
+
+def _c27_mark(ev, mark):
+    """Danh dau da gui 'late'/'uniform' cho nguoi nay. Lay ngay theo ts CUA ALARM
+    (giong _c27_decide) de alarm luc 23:59:59 khong bi danh dau sang ngay hom sau."""
+    kind, person = mark
+    with _C27_LOCK:
+        st = _c27_load(_c27_hm(ev.get('ts'))[1])
+        if person not in st[kind]:
+            st[kind].append(person)
+            _c27_save(st)
+
+
+def _tg_forward(ev):
+    """Chay trong thread rieng. Alarm -> caption + ANH + id, gui toi nhom da /setup.
+    KHONG tu gui clip nua: nguoi dung go /video <id> khi can (xem _tg_send_video)."""
+    try:
+        if ev.get('kind') != 'alarm':
+            return                       # clip box day ve: khong tu gui
+        # Loc truoc: keepalive (type 6) va dem nguoi (AreaRuleData) khong can gui Telegram
+        if ev.get('type') == 6 or ev.get('algo_model') == 'AreaRuleData':
+            return
+        chats = CONN.get('tg_chats') or []
+        setups = CONN.get('tg_setup') or {}
+        # Che do /setup <ten>: _c27_decide co side effect (ghi lich su xuat hien)
+        # nen goi DUNG 1 LAN cho ca event, khong goi theo tung nhom.
+        if any((setups.get(str(c)) or {}).get('mode') == 'rule' for c in chats):
+            title, send, mark = _c27_decide(ev)
+        else:
+            title, send, mark = None, True, None
+        chats = _tg_targets(ev, send)
+        if not chats:
+            return                       # chua /setup, hoac c27 chan -> im lang
+        img = _tg_image(ev)
+        if not img:
+            # Khong co anh -> IM. Gui text khong anh chi lam loang nhom (alarm loi,
+            # box chua kip luu anh). Caption con o log.
+            print(f'[tg] bo qua (khong co anh): {ev.get("algo_model")}')
+            return
+        aid = _tg_next_id()
+        cap = _tg_caption(ev, aid, title)
+        _tg_alarm_log(aid, ev, cap)
+        if mark:
+            _c27_mark(ev, mark)          # danh dau SAU khi chac chan co cai de gui
+        print(f'[tg] gui anh #{aid} cho {ev.get("algo_model")} ({len(img[1])} bytes)')
+        _tg_send_all('sendPhoto', {'caption': cap}, {'photo': img}, chats)
     except Exception as e:
         print('[tg] forward that bai:', e)
 
@@ -1076,6 +1409,12 @@ def handle_alarm(body, ctype):
     # type 6 trong jsonl). Khong phai phat hien: bo qua, khong ghi jsonl khong publish.
     if t is None:
         return
+    # Chong "lay lai hang cu": vua mat ket noi voi box roi noi lai, box day lai alarm
+    # cu -> chi giu alarm moi nhat, bo hang cu. Bo truoc khi luu anh/jsonl/publish.
+    _ct = (alarm.get('behaviour') or alarm.get('face') or {}).get('capture_time')
+    if isinstance(_ct, (int, float)) and not _box_lag_gate(_ct):
+        print(f'[box] bo alarm CU sau khi noi lai (hang cu, capture_time {_ct})')
+        return
     # Firmware ECS-516S-SF-HD KHONG dat channel_id/channel_name o top-level nhu doan
     # ban dau — chung nam trong channel_info{channel_id, channel_name, ipc_addr,
     # ipc_sn}. capture_time cung nam trong behaviour/face, khong o top-level.
@@ -1186,19 +1525,18 @@ class Handler(SimpleHTTPRequestHandler):
         pass
 
     def _local_only(self, path):
-        """True = tu choi. CHI /alarm duoc goi tu LAN (box o IP khac). Moi thu con lai
-        (UI, /aibox/* proxy vao box, /api/conn chua IP+user) chi cho localhost —
-        khong the de may bat ky trong LAN xoa camera qua proxy nay."""
-        if path == '/alarm':
-            return False
-        ip = self.client_address[0]
-        if ip in ('127.0.0.1', '::1') or ip.startswith('::ffff:127.'):
-            return False
-        self.send_response(403)
-        self._cors()
-        self.send_header('Content-Length', '0')
-        self.end_headers()
-        return True
+        """True = tu choi. Gio MO HET cho LAN: app Electron o may khac phuc vu
+        giao dien tai 127.0.0.1:<port> roi goi API ve day qua LAN. Truoc day chi
+        /alarm mo ra LAN, phan con lai khoa localhost.
+
+        CANH BAO: KHONG co dang nhap. Ai vao duoc LAN cung xem duoc camera, xoa
+        duoc camera (/aibox/channel/delete), doi duoc IP/mat khau box (/api/conn)
+        va doc duoc mat khau camera (go2rtc :1984/api/streams).
+
+        Day la DIEM CHAN DUY NHAT cua moi request (do_GET/do_POST/do_OPTIONS/
+        do_HEAD deu goi ham nay). Them lai dang nhap thi dat dung o day, dung rai
+        ra tung route. /alarm phai luon mo: box POST vao tu IP khac, khong cookie."""
+        return False
 
     def guess_type(self, path):
         # SimpleHTTPRequestHandler tra 'text/html' tron -> browser doan windows-1252
@@ -1664,6 +2002,13 @@ class Handler(SimpleHTTPRequestHandler):
         p = urlparse(path).path
         if p.startswith('/alarms/'):
             return os.path.join(ALARM_DIR, os.path.basename(unquote(p)))
+        # ui/ co cac file backup (.bak, .bak2, .bak-preapple, .pre-area) va chung
+        # duoc phuc vu cong khai nhu moi file tinh khac. ui/ui.js.bak chua MOT
+        # COMMENT ghi mat khau camera that -> tra ve duong dan khong ton tai de 404.
+        # (Da mo LAN o _local_only nen truoc day chi may chu doc duoc, gio thi ca mang.)
+        _n = os.path.basename(p).lower()
+        if '.bak' in _n or '.pre-' in _n:
+            return os.path.join(HERE, '__khong_ton_tai__')
         return super().translate_path(path)
 
     def _sse(self):
@@ -1824,6 +2169,21 @@ def selftest():
     globals()['_box_channels'] = _box_channels_orig
     globals()['_box_area_enabled'] = _box_area_enabled_orig
     globals()['_area_last'] = _area_last_orig
+    # SSE: queue day phai VUT tin cu va GIU dang ky client. Huy dang ky thi _sse
+    # van ': ping' nen EventSource khong reconnect -> tab Nhat ky dung yen vinh vien.
+    q = queue.Queue(maxsize=2)
+    _subs.append(q)
+    try:
+        for i in range(5):
+            _publish({'kind': 'alarm', 'i': i})
+        assert q in _subs, 'client bi huy dang ky khi queue day'
+        assert q.qsize() == 2, q.qsize()
+        got = [json.loads(q.get_nowait().decode()[len('data: '):])['i'] for _ in range(2)]
+        assert got == [3, 4], f'phai giu 2 tin MOI nhat, duoc {got}'
+    finally:
+        if q in _subs:
+            _subs.remove(q)
+
     print('selftest ok')
 
 
