@@ -6,7 +6,9 @@
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "types": ["node"]
+    "types": ["node"],
+    "rootDir": "electron",
+    "outDir": "dist-electron"
   },
-  "include": ["electron", "vite.config.ts"]
+  "include": ["electron"]
 }

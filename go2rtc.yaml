@@ -1,5 +1,8 @@
 api:
-  listen: "127.0.0.1:1984"   # chỉ localhost. Đổi thành ":1984" là mở LAN -> phải thêm auth
+  # Mở LAN: app Electron ở máy khác lấy hình trực tiếp từ đây (WS + WebRTC).
+  # KHÔNG đặt username/password: trình duyệt không gửi được credential trong
+  # WebSocket handshake -> bật auth là mọi khung hình chết (đã đo: LAN WS 401).
+  listen: ":1984"
   static_dir: "ui"           # UI của mình, thay web UI mặc định của go2rtc
   origin: "*"                # cho phép mở UI qua proxy/origin khác
 
@@ -10,8 +13,6 @@ streams:
 
   # Dahua .180/.181: HEVC cả main lẫn sub -> phải đổi encode sang H264 trong web camera
   # Hikvision .75: không tới được (ping fail, mọi cổng đóng)
-  ch1:
-    - rtsp://admin:123456a$@192.168.21.178:554/ch01
   ch2:
     - rtsp://admin:UNV123456%25@192.168.21.179:554/ch01
   ch3:

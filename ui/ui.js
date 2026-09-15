@@ -9,6 +9,7 @@ import {
 } from './app.js';
 import {
   BASE, algoName, algoGroups, alarms, alarmsOf, camOf, isDetect, imgOf,
+  camKey, algoKey, logMatch,
   activeAlarm, clearAlarm, startAlarms, setNote, setGo, chIdOf, mergeRtsp,
   algoAll, cameraList, hashrate, openAI, initAI, loadAlarmHistory, seedAreaCount, videoOf, exitDraw, algoSave,
   areaCount, areaOn, loadAreaOn, confirmBox,
@@ -832,19 +833,37 @@ const colorOf = m => {
 
 // Nhung alarm vua toi trong phien nay -> chip "MỚI"
 const FRESH = new Set();
-let logCats = null;   // null = tat ca; Set = cac category user tick
+// Bo loc Nhat ky: 2 Set doc lap, null = "tat ca". Logic khop nam o logMatch()
+// trong ai.js — do la file co selftest chay bang node.
+let logCams = null;    // Set camKey ('ch1'..'ch8' / '?')
+let logAlgos = null;   // Set algoKey (algo_model / '?')
+
+/** Bat/tat 1 muc loc. allKeys = toan bo muc dang co.
+ *  Dang "tat ca" (null) ma bam 1 muc -> chon tat ca TRU muc do, dung y nhu ban
+ *  loc 3 nhom truoc day. Chon het hoac bo het -> tra ve null, de canh bao MOI
+ *  tu hien lai chu khong bi ket trong trang thai da loc. */
+function toggleIn(sel, key, allKeys) {
+  const s = new Set(sel || allKeys);
+  if (s.has(key)) s.delete(key); else s.add(key);
+  return (s.size === 0 || s.size === allKeys.length) ? null : s;
+}
 
 function paintAlarms() {
   const box = $('#logBox');
   const all = alarms().filter(isDetect);
-  const cat = a => algoGroups([a.algo_model])[0]?.cat || 'Khác';
-  const cats = [...new Set(all.map(cat))].sort();
-  if (logCats) {
-    logCats = new Set([...logCats].filter(c => cats.includes(c)));
-    if (logCats.size === cats.length) logCats = null;
+  // Don bo loc: bo muc khong con xuat hien, va chon het thi ve null.
+  const camKeys = new Set(all.map(camKey));
+  const algoKeys = new Set(all.map(algoKey));
+  if (logCams) {
+    logCams = new Set([...logCams].filter(k => camKeys.has(k)));
+    if (logCams.size === 0 || logCams.size === camKeys.size) logCams = null;
   }
-  paintLogFilter(cats, all);
-  const rows = (logCats ? all.filter(a => logCats.has(cat(a))) : all).slice(0, 150);
+  if (logAlgos) {
+    logAlgos = new Set([...logAlgos].filter(k => algoKeys.has(k)));
+    if (logAlgos.size === 0 || logAlgos.size === algoKeys.size) logAlgos = null;
+  }
+  paintLogFilter(all);
+  const rows = all.filter(a => logMatch(a, logCams, logAlgos)).slice(0, 150);
   if (!rows.length) {
     box.innerHTML = '<div class="hint">Chưa có cảnh báo nào từ AI box</div>';
     return;
@@ -862,36 +881,106 @@ function paintAlarms() {
   box.replaceChildren(head, tl);
 }
 
-function paintLogFilter(cats, all) {
-  const cat = a => algoGroups([a.algo_model])[0]?.cat || 'Khác';
+/* Menu loc 2 khuc. CAMERA lay nhan tu channel_name — dung cai dong log dang hien
+   (vd '001'), khong phai 'ch1'. HANH VI: nhom -> tung hanh vi; bam hang nhom =
+   chon/bo CA NHOM nen thao tac cu (loc theo 3 nhom) van lam duoc y nguyen.
+   Danh sach dung tu chinh cac alarm dang co -> chi hien thu da tung xay ra. */
+function paintLogFilter(all) {
   const list = $('#logFilterList');
   if (!list) return;
-  list.replaceChildren(...cats.map(c => {
+
+  const mk = (cls, label, n, color, onclick) => {
     const b = document.createElement('div');
-    b.className = 'mrow' + (logCats && logCats.has(c) ? ' on' : '');
+    b.className = 'mrow' + (cls ? ' ' + cls : '');
     b.innerHTML = '<span class="dot"></span><span class="l"></span><span class="k"></span>' +
       '<svg class="ck" viewBox="0 0 24 24" fill="none" stroke="#2a2410" stroke-width="2.6" ' +
         'stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
-    b.querySelector('.dot').style.background = KIND_COLOR[c] || KIND_COLOR['Khác'];
-    b.querySelector('.l').textContent = c;
-    b.querySelector('.k').textContent = String(all.filter(a => cat(a) === c).length);
-    b.onclick = e => {
-      e.stopPropagation();
-      if (!logCats) {
-        logCats = new Set(cats.filter(x => x !== c));
-        if (logCats.size === 0) logCats = null;
-      } else if (logCats.has(c)) {
-        logCats.delete(c);
-        if (logCats.size === 0) logCats = null;
-      } else {
-        logCats.add(c);
-      }
-      paintAlarms();
-    };
+    b.querySelector('.dot').style.background = color;
+    b.querySelector('.l').textContent = label;
+    b.querySelector('.k').textContent = String(n);
+    if (onclick) b.onclick = e => { e.stopPropagation(); onclick(); };
+    else b.classList.add('ro');            // tieu de khuc: khong bam duoc
     return b;
-  }));
+  };
+  const sec = t => { const d = document.createElement('div'); d.className = 'msec'; d.textContent = t; return d; };
+  const sep = () => { const d = document.createElement('div'); d.className = 'msep'; return d; };
+
+  // --- gom tu chinh du lieu dang co ---
+  const cams = new Map();                  // camKey -> {label, n}
+  const byCat = new Map();                 // cat -> Map(algoKey -> {label, n})
+  for (const a of all) {
+    const ck = camKey(a);
+    const ce = cams.get(ck);
+    if (ce) ce.n++;
+    else cams.set(ck, {label: ck === '?' ? 'Không rõ' : (a.channel_name || ck), n: 1});
+
+    const cat = algoGroups([a.algo_model])[0]?.cat || 'Khác';
+    const ak = algoKey(a);
+    let m = byCat.get(cat);
+    if (!m) byCat.set(cat, m = new Map());
+    const ae = m.get(ak);
+    if (ae) ae.n++;
+    else m.set(ak, {label: ak === '?' ? 'Không rõ' : algoName(a.algo_model, a.algo_name), n: 1});
+  }
+  // "duoc chon" chu khong phai "co dang loc": khi chua loc gi (null) thi MOI muc
+  // deu dang duoc hien -> phai co dau het. Ban cu de trong het nen nhin nhu bi loai.
+  const inc = (sel, k) => !sel || sel.has(k);
+  const camAll  = [...cams.keys()];
+  const algoAll = [...byCat.values()].flatMap(m => [...m.keys()]);
+  const chNum = k => (k === '?' ? 1e9 : (parseInt(k.slice(2), 10) || 0));
+
+  const rows = [sec('Camera')];
+  [...cams.keys()].sort((x, y) => chNum(x) - chNum(y)).forEach(k => {
+    const c = cams.get(k);
+    rows.push(mk(inc(logCams, k) ? 'on' : '', c.label, c.n, KIND_COLOR['Khác'], () => {
+      logCams = toggleIn(logCams, k, camAll);
+      paintAlarms();
+    }));
+  });
+
+  rows.push(sep(), sec('Hành vi'));
+  [...byCat.keys()].sort().forEach(cat => {
+    const m = byCat.get(cat), keys = [...m.keys()];
+    const color = KIND_COLOR[cat] || KIND_COLOR['Khác'];
+    const total = [...m.values()].reduce((sum, x) => sum + x.n, 0);
+    const on = keys.every(k => inc(logAlgos, k));
+    rows.push(mk(on ? 'on' : '', cat, total, color, () => {     // bam = ca nhom
+      const s = new Set(logAlgos || algoAll);
+      keys.forEach(k => { if (on) s.delete(k); else s.add(k); });
+      logAlgos = (s.size === 0 || s.size === algoAll.length) ? null : s;
+      paintAlarms();
+    }));
+    keys.forEach(k => {
+      const e = m.get(k);
+      rows.push(mk('sub' + (inc(logAlgos, k) ? ' on' : ''), e.label, e.n, color, () => {
+        logAlgos = toggleIn(logAlgos, k, algoAll);
+        paintAlarms();
+      }));
+    });
+  });
+  list.replaceChildren(...rows);
+
   const lbl = $('#logFilterLabel');
-  if (lbl) lbl.textContent = logCats ? [...logCats].join(', ') : 'Tất cả';
+  if (lbl) lbl.textContent = logFilterLabel(cams, byCat);
+}
+
+/** Nhan tren nut Loc: chon dung 1 muc thi hien TEN (doc de hon so dem), con lai dem. */
+function logFilterLabel(cams, byCat) {
+  const p = [];
+  if (logCams) {
+    p.push(logCams.size === 1 ? (cams.get([...logCams][0])?.label || '1 camera')
+                              : logCams.size + ' camera');
+  }
+  if (logAlgos) {
+    if (logAlgos.size > 1) p.push(logAlgos.size + ' hành vi');
+    else {
+      const k = [...logAlgos][0];
+      let lbl = k;
+      for (const m of byCat.values()) if (m.has(k)) { lbl = m.get(k).label; break; }
+      p.push(lbl);
+    }
+  }
+  return p.length ? p.join(' · ') : 'Tất cả';
 }
 
 $('#logFilter').onclick = e => {

@@ -1,107 +1,177 @@
-import { app as t, BrowserWindow as p, ipcMain as f, Menu as _ } from "electron";
-import g from "module";
-import { fileURLToPath as T } from "url";
-import o from "path";
-import { spawn as y, execFile as O } from "child_process";
-import h from "net";
-g.Module.createRequire(import.meta.url);
-const m = o.dirname(T(import.meta.url));
-process.env.APP_ROOT = o.join(m, "..");
-const c = process.env.VITE_DEV_SERVER_URL, k = o.join(process.env.APP_ROOT, "dist-electron"), L = o.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = c ? o.join(process.env.APP_ROOT, "public") : o.join(process.env.APP_ROOT, "dist");
-let i, r = null;
-const u = parseInt(process.env.BRIDGE_PORT || "8090", 10);
-t.requestSingleInstanceLock() ? t.on("second-instance", () => {
-  i && (i.isMinimized() && i.restore(), i.focus());
-}) : t.quit();
-function b() {
-  if (c) {
-    const n = o.join(process.env.APP_ROOT, "..");
-    return { cmd: "py", args: [o.join(n, "aibox.py")], cwd: n };
-  }
-  const e = o.join(process.resourcesPath, "aibox");
-  return { cmd: o.join(e, "aibox.exe"), args: [], cwd: e };
-}
-function x() {
-  const { cmd: e, args: n, cwd: s } = b(), l = t.getPath("userData");
-  r = y(e, n, {
-    cwd: s,
-    env: { ...process.env, AIBOX_DATA: l },
-    stdio: "ignore",
-    // ponytail: silent; uncomment when debugging startup
-    detached: !0
-    // tao process group rieng de taskkill /T giet ca go2rtc
-  }), r.on("error", (a) => {
-    console.error("[aibox] spawn failed:", a.message);
-  }), r.on("exit", (a) => {
-    console.error("[aibox] exited with code", a), r = null;
-  });
-}
-function w() {
-  if (!r || r.killed) return;
-  const e = r.pid;
-  r.kill(), process.platform === "win32" && e && O("taskkill", ["/PID", String(e), "/T", "/F"], () => {
-  }), r = null;
-}
-function I(e, n = 8e3) {
-  return new Promise((s) => {
-    const l = Date.now() + n, a = () => {
-      const d = h.createConnection({ host: "127.0.0.1", port: e }, () => {
-        d.destroy(), s(!0);
-      });
-      d.on("error", () => {
-        if (Date.now() > l) {
-          s(!1);
-          return;
-        }
-        setTimeout(a, 200);
-      });
-    };
-    a();
-  });
-}
-function P() {
-  i = new p({
-    icon: o.join(process.env.VITE_PUBLIC, "logo.svg"),
-    // Kiosk: mở full screen, không thoát được bằng F11/Esc (đúng nghĩa kiosk).
-    // Muốn thoát thì Task Manager / đóng process. Nếu cần đóng dễ hơn, đổi
-    // kiosk:true -> fullscreen:true (vẫn full screen nhưng Alt+F4/Esc thoát được).
-    kiosk: !0,
-    autoHideMenuBar: !0,
-    webPreferences: {
-      preload: o.join(m, "preload.mjs"),
-      webSecurity: !1,
-      allowRunningInsecureContent: !0
-    }
-  }), _.setApplicationMenu(null), c ? (i.webContents.openDevTools(), i.loadURL(c)) : i.loadURL(`http://127.0.0.1:${u}`);
-}
-t.on("window-all-closed", () => {
-  process.platform !== "darwin" && (w(), t.quit(), i = null);
-});
-t.on("activate", () => {
-  p.getAllWindows().length === 0 && P();
-});
-t.on("before-quit", w);
-t.whenReady().then(async () => {
-  x(), await I(u) || console.warn("[aibox] port", u, "not ready after timeout, loading anyway"), P();
-});
-function R() {
-  return o.join(t.getPath("userData"), "aibox.conf.json");
-}
-f.handle("config:get", async () => {
-  try {
-    const e = await import("fs").then((n) => n.readFileSync(R(), "utf-8"));
-    return JSON.parse(e);
-  } catch {
-    return {};
-  }
-});
-f.handle("config:save", async (e, n) => {
-  const { writeFileSync: s } = await import("fs");
-  return s(R(), JSON.stringify(n, null, 1), "utf-8"), !0;
-});
-export {
-  k as MAIN_DIST,
-  L as RENDERER_DIST,
-  c as VITE_DEV_SERVER_URL
+import { app, BrowserWindow, Menu, ipcMain } from 'electron';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import http from 'http';
+import net from 'net';
+import fs from 'fs';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// ---------------------------------------------------------------------------
+// Mo hinh: 1 BE + N client.
+//   BE   = aibox.py + go2rtc, chay tren MAY CHU (co box trong LAN).
+//   FE   = thu muc ui/, dong goi THANG VAO BO CAI nay va duoc phuc vu tu
+//          127.0.0.1:<port> cua chinh may khach.
+// Khong con backend con o may khach: app nay chi mo giao dien roi goi API ve BE.
+//
+// Vi sao phai co HTTP server noi bo chu khong dung loadFile: ui/index.html nap
+// <script type="module">, ma ES module bi trinh duyet chan khi origin la file://.
+// Them nua origin http://127.0.0.1:<port> nam san trong danh sach CORS cua
+// aibox.py (_cors), nen khong phai sua gi ben BE.
+// ---------------------------------------------------------------------------
+const DEV = !app.isPackaged;
+const UI_DIR = DEV ? path.join(__dirname, '..', '..', 'ui')
+    : path.join(process.resourcesPath, 'ui');
+// Dia chi BE khi chua co server.txt. Doi may BE thi SUA FILE, khong build lai:
+//   %APPDATA%\unv-smartbox-desktop\server.txt
+const DEFAULT_ORIGIN = 'http://192.168.21.34:8090';
+const MIME = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.mjs': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+    '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
 };
+let win = null;
+let origin = DEFAULT_ORIGIN; // URL day du, co cong: de do cong + luu server.txt
+let originUi = ''; // scheme+host KHONG cong: de bom cho giao dien
+// ui/app.js va ui/ai.js TU gan ':8090' / ':1984' vao gia tri nay (xem hang ORIGIN o
+// hai file do). Bom ca cong vao la thanh '...:8090:8090' -> URL rac, moi loi goi API
+// hong. Nen phai cat cong ra truoc khi bom.
+function originHost(o) {
+    try {
+        const u = new URL(o);
+        return u.protocol + '//' + u.hostname;
+    }
+    catch {
+        return o;
+    }
+}
+// ---------------------------------------------------------------- cau hinh BE
+const originFile = () => path.join(app.getPath('userData'), 'server.txt');
+function readOrigin() {
+    try {
+        const s = fs.readFileSync(originFile(), 'utf8').trim();
+        if (s)
+            return s.replace(/\/+$/, '');
+    }
+    catch { /* chua co file -> dung mac dinh */ }
+    return DEFAULT_ORIGIN;
+}
+function writeOrigin(v) {
+    let s = String(v || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\/[^\s/]+(:\d+)?$/.test(s))
+        return false;
+    // Nguoi dung hay go thieu cong -> mac dinh 8090, khong thi phep do cong se roi vao 80.
+    if (!/:\d+$/.test(s))
+        s += ':8090';
+    fs.writeFileSync(originFile(), s + '\n', 'utf8');
+    return true;
+}
+// ------------------------------------------------------------------ http noi bo
+function serveUi() {
+    return new Promise((resolve, reject) => {
+        const srv = http.createServer((req, res) => {
+            const rel = decodeURIComponent((req.url || '/').split('?')[0]);
+            const file = path.normalize(path.join(UI_DIR, rel === '/' ? 'index.html' : rel));
+            // Chan path traversal: /../../... khong duoc thoat khoi UI_DIR.
+            if (!file.startsWith(path.normalize(UI_DIR + path.sep))) {
+                res.writeHead(403).end();
+                return;
+            }
+            fs.readFile(file, (err, buf) => {
+                if (err) {
+                    res.writeHead(404).end();
+                    return;
+                }
+                res.writeHead(200, {
+                    'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+                    'Cache-Control': 'no-store', // sua ui/ -> mo lai la thay, khong dinh cache
+                });
+                res.end(buf);
+            });
+        });
+        srv.on('error', reject);
+        srv.listen(0, '127.0.0.1', () => resolve(srv.address().port));
+    });
+}
+// BE song chua? Do cong truoc khi mo cua so, de con kip hien trang "nhap dia chi"
+// thay vi mot giao dien trang tron (giao dien van load duoc, chi API la chet).
+function reachable(o, ms = 3000) {
+    return new Promise((resolve) => {
+        let u;
+        try {
+            u = new URL(o);
+        }
+        catch {
+            resolve(false);
+            return;
+        }
+        const s = net.createConnection({ host: u.hostname, port: Number(u.port || (u.protocol === 'https:' ? 443 : 80)) }, () => { s.destroy(); resolve(true); });
+        s.setTimeout(ms, () => { s.destroy(); resolve(false); });
+        s.on('error', () => resolve(false));
+    });
+}
+// ---------------------------------------------------------------------- window
+function createWindow(port, ok) {
+    win = new BrowserWindow({
+        icon: path.join(UI_DIR, 'assets', 'logo.png'),
+        // Kiosk: mo full screen, khong thoat duoc bang F11/Esc (dung nghia kiosk).
+        // Muon thoat thi Task Manager / dong process. Can dong de hon thi doi
+        // kiosk:true -> fullscreen:true (van full screen nhung Alt+F4/Esc thoat duoc).
+        // Chi bat o ban dong goi: luc dev ma kiosk thi khong thoat ra de sua duoc.
+        kiosk: !DEV,
+        autoHideMenuBar: true,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.cjs'),
+            webSecurity: false,
+            allowRunningInsecureContent: true,
+        },
+    });
+    Menu.setApplicationMenu(null);
+    win.loadURL(`http://127.0.0.1:${port}/${ok ? 'index.html' : 'offline.html'}`);
+}
+// ------------------------------------------------------------------ IPC
+ipcMain.on('aibox:origin', (e) => { e.returnValue = originUi; }); // cho ui/app.js, ui/ai.js
+ipcMain.on('aibox:server', (e) => { e.returnValue = origin; }); // cho ui/offline.html
+ipcMain.handle('aibox:set-origin', (_e, v) => {
+    if (!writeOrigin(v))
+        return { ok: false, err: 'Dia chi phai dang http://ip:cong' };
+    app.relaunch();
+    app.exit(0);
+    return { ok: true };
+});
+// ------------------------------------------------------------------ lifecycle
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+        app.quit();
+        win = null;
+    }
+});
+app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0)
+        app.whenReady().then(boot);
+});
+async function boot() {
+    origin = readOrigin();
+    originUi = originHost(origin);
+    const ok = await reachable(origin);
+    if (!ok)
+        console.warn('[aibox] BE khong tra loi:', origin);
+    const port = await serveUi();
+    createWindow(port, ok);
+}
+if (!app.requestSingleInstanceLock()) {
+    app.quit();
+}
+else {
+    app.on('second-instance', () => {
+        if (win) {
+            if (win.isMinimized())
+                win.restore();
+            win.focus();
+        }
+    });
+    app.whenReady().then(boot);
+}

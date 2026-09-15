@@ -4,5 +4,19 @@
  "user": "admin",
  "pass": "admin@123",
  "tg_token": "8823905598:AAHUgfrLo8hlyxo4X4zc5WhCKtXVVf6V_-I",
- "tg_chats": []
+ "tg_chats": [
+  "-1004388253380"
+ ],
+ "tg_setup": {
+  "5542945244": {
+   "mode": "all",
+   "name": "all",
+   "algos": []
+  },
+  "-1004388253380": {
+   "mode": "rule",
+   "name": "c27",
+   "algos": []
+  }
+ }
 }

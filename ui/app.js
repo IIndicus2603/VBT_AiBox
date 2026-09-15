@@ -7,8 +7,17 @@ import {onStateChange, loadLog} from './ui.js';
 // api/streams ở :8090 sẽ 404 và cả lưới camera chết. go2rtc mở origin:"*",
 // aibox mở CORS cho localhost -> gọi chéo được cả hai chiều.
 // Đổi cổng thì sửa đúng 2 số dưới đây.
-const at = p => location.port === String(p) ? ''
-  : location.protocol + '//' + (location.hostname || '127.0.0.1') + ':' + p + '/';
+// Goc cua BE (vd 'http://192.168.21.34'). App trong bo cai phuc vu giao dien tu
+// 127.0.0.1:<port> cua CHINH MAY KHACH -> location.hostname tro nham cho, nen
+// preload bom san globalThis.AIBOX_ORIGIN. Mo qua trinh duyet thi khong co bien
+// do -> suy ra tu chinh URL trang, y nhu truoc.
+// Cat cong neu co. AIBOX_ORIGIN den tu server.txt (nguoi dung hay go kem ':8090'),
+// ma ben duoi luon TU gan cong -> de nguyen se thanh '...:8090:8090' va moi loi goi
+// API hong (URL rac). Cat o day thi ca hai nguon deu cho ket qua nhu nhau.
+const noPort = s => String(s).replace(/\/+$/, '').replace(/:\d+$/, '');
+export const ORIGIN = noPort(globalThis.AIBOX_ORIGIN
+  || ((location.protocol || 'http:') + '//' + (location.hostname || '127.0.0.1')));
+const at = p => location.port === String(p) ? '' : ORIGIN + ':' + p + '/';
 export const G = at(1984);      // go2rtc: streams, ws, log, config
 // base cua aibox.py (:8090) o ai.js -> BASE, khong lap lai o day
 export const API = G + 'api/streams';
@@ -142,7 +151,9 @@ export function makeTile(name) {
   p.addEventListener('state', e => {
     const d = e.detail;
     // 'idle' = bị tháo có chủ ý (cuộn ra ngoài / đổi tab) -> KHÔNG phải lỗi
-    t.state = {live: 'live', connecting: 'wait', idle: 'pause', retry: 'down', error: 'down'}[d.state]
+    // 'retry' -> 'wait' (ĐANG KẾT NỐI), KHÔNG phải 'down': player chỉ báo 'error'
+    // sau khi đã thử lại maxRetry lần liên tiếp (ui/video-stream.js).
+    t.state = {live: 'live', connecting: 'wait', idle: 'pause', retry: 'wait', error: 'down'}[d.state]
       || 'wait';
     if (d.error) t.err = d.error;
     if (t.state === 'live') t.err = null;

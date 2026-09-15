@@ -18,10 +18,15 @@ const $$ = s => [...document.querySelectorAll(s)];
 
 // UI do go2rtc serve (:1984) nhung API cua box do aibox.py giu (:8090) -> phai
 // tro tuyet doi khi khong cung port. aibox.py tra CORS cho truong hop nay.
-export const BASE = location.port === '8090' ? '' : `http://${location.hostname}:8090/`;
-// go2rtc (:1984) — doi xung voi BASE. Khong import G tu app.js: app.js -> ui.js ->
-// app.js la vong, keo ai.js vao do lam module nay phu thuoc thu tu khoi tao.
-const GO = location.port === '1984' ? '' : `http://${location.hostname || '127.0.0.1'}:1984/`;
+// Cung quy tac voi ORIGIN o app.js: uu tien goc do preload bom vao, khong co thi
+// suy ra tu URL trang. Khong import tu app.js: app.js -> ui.js -> app.js la vong.
+// Cat cong — xem giai thich o ui/app.js (AIBOX_ORIGIN co the kem ':8090').
+const noPort = s => String(s).replace(/\/+$/, '').replace(/:\d+$/, '');
+const ORIGIN = noPort(globalThis.AIBOX_ORIGIN
+  || ((location.protocol || 'http:') + '//' + (location.hostname || '127.0.0.1')));
+export const BASE = location.port === '8090' ? '' : ORIGIN + ':8090/';
+// go2rtc (:1984) — doi xung voi BASE.
+const GO = location.port === '1984' ? '' : ORIGIN + ':1984/';
 
 const post = async (path, body) => {
   const r = await fetch(BASE + 'aibox/' + path, {
@@ -1378,6 +1383,19 @@ export async function seedAreaCount() {
 /** Tên stream go2rtc ứng với 1 alarm (`ch<channel_id>`), null nếu không rõ. */
 export const camOf = a => (a?.channel_id != null ? 'ch' + a.channel_id : null);
 
+/** Khoá lọc camera. Khác camOf() ở chỗ camOf trả null khi alarm thiếu channel_id,
+ *  còn ở đây gom vào '?' để nhóm đó vẫn lọc ra được (2/7112 bản ghi thật). */
+export const camKey = a => camOf(a) || '?';
+
+/** Khoá lọc hành vi. Thiếu algo_model -> '?' (45/7112 bản ghi thật rơi vào đây). */
+export const algoKey = a => a?.algo_model || '?';
+
+/** Alarm có lọt qua bộ lọc tab Nhật ký không. cams/algos = null nghĩa là "tất cả";
+ *  khi lọc cả hai thì phải khớp CẢ HAI. Hàm thuần, không đụng DOM -> test bằng
+ *  node được (xem selftest cuối file). */
+export const logMatch = (a, cams, algos) =>
+  (!cams || cams.has(camKey(a))) && (!algos || algos.has(algoKey(a)));
+
 /** Alarm của 1 camera, mới nhất trước — cho thanh lịch sử ở detail. */
 export const alarmsOf = name => AL.filter(a => camOf(a) === name && isDetect(a));
 
@@ -1608,7 +1626,7 @@ export function initAI() {
 }
 
 // selftest (can shim `location` vi BASE/GO doc o top-level):
-//   node --input-type=module -e "globalThis.location={port:'8090',hostname:'127.0.0.1',href:'http://127.0.0.1:8090/'};await import('./ui/ai.js')"
+//   node --input-type=module -e "globalThis.location={protocol:'http:',port:'8090',hostname:'127.0.0.1',href:'http://127.0.0.1:8090/'};await import('./ui/ai.js')"
 if (typeof window === 'undefined') {
   const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m + ': ' + JSON.stringify(a)); };
   eq(parsePts({point_x: '0,10000,5000', point_y: '0,0,9999'}), [[0, 0], [10000, 0], [5000, 9999]], 'parse');
@@ -1646,6 +1664,19 @@ if (typeof window === 'undefined') {
   eq(algoGroups(['SmokingAlarm', 'FireDetection', 'MaLa123']).map(g => g.cat),
     ['Môi trường', 'Hành vi', 'Khác'], 'gom nhom theo thu tu box + ma la');
   eq(algoGroups([]).length, 0, 'khong co algo -> khong co nhom');
+  // bo loc Nhat ky: 2 Set doc lap, null = tat ca, loc ca hai thi phai khop ca hai
+  const AL = (cid, m) => ({channel_id: cid, algo_model: m});
+  eq(logMatch(AL(1, 'X'), null, null), true, 'khong loc -> hien het');
+  eq(logMatch(AL(1, 'X'), new Set(['ch1']), null), true, 'camera khop');
+  eq(logMatch(AL(2, 'X'), new Set(['ch1']), null), false, 'camera khac -> an');
+  eq(logMatch(AL(2, 'X'), new Set(['ch1', 'ch2']), null), true, 'nhieu camera');
+  eq(logMatch(AL(1, 'X'), null, new Set(['X'])), true, 'hanh vi khop');
+  eq(logMatch(AL(1, 'Y'), null, new Set(['X'])), false, 'hanh vi khac -> an');
+  eq(logMatch(AL(1, 'Y'), new Set(['ch1']), new Set(['X'])), false, 'camera dung + hanh vi sai -> an');
+  eq(logMatch(AL(1, 'X'), new Set(['ch1']), new Set(['X'])), true, 'khop ca hai -> hien');
+  eq([camKey(AL(null, 'X')), algoKey(AL(1, null))], ['?', '?'], 'thieu du lieu -> gom vao ?');
+  eq(logMatch(AL(null, 'X'), new Set(['ch1']), null), false, 'camera ? khong lot qua loc ch1');
+  eq(logMatch(AL(null, 'X'), new Set(['?']), null), true, 'loc rieng duoc nhom ?');
   eq(algoList(null), [], 'null');
   // buoc ve: 2 buoc cho blend, 1 buoc cho polygon thuong; key phai dung ten box dung
   eq(stepsOf('LineDetectorCrossed', 'ROI').map(s => s.key), ['line', 'direction_line'], 'buoc line+direction');
