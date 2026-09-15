@@ -1,0 +1,2186 @@
+// Entry point. app.js = state + render luoi; file nay = wiring + toast + cac view.
+// Vong import app.js <-> ui.js an toan vi ui.js chi export function declaration
+// (duoc hoist) va app.js khong chay gi o top-level.
+import {
+  $, $$, S, G, API, FILTERS, hms, pad, fixPct, nice, mask, row,
+  tileState, isDown, pollStreams, drawGrid, paintTile, paintDetail,
+  openDetail, closeDetail, detachDetailPlayer, go, hooks, sampleFps, sampleRtt, dPlayer,
+  statusOf, codecLine,
+} from './app.js';
+import {
+  BASE, algoName, algoGroups, alarms, alarmsOf, camOf, isDetect, imgOf,
+  activeAlarm, clearAlarm, startAlarms, setNote, setGo, chIdOf, mergeRtsp,
+  algoAll, cameraList, hashrate, openAI, initAI, loadAlarmHistory, seedAreaCount, videoOf, exitDraw, algoSave,
+  areaCount, areaOn, loadAreaOn, confirmBox,
+} from './ai.js';
+
+/* ================= toast ================= */
+
+// Mau vien/chu theo loai canh bao, dung bang mau voi cham moc o timeline.
+const SEV_COLOR = {err: '#ff4d4f', warn: '#e8a020', ok: '#3ddc84'};
+
+/** Toast 5 khoi nhu design: dau (cham + mux do + gio + X), anh 21/9, tieu de,
+ *  phu de, hai nut. Cac toast cu xep CHONG sau toast moi nhat (khong thanh cot). */
+function toast({sev, title, sub, name, kind, img, onSkip, color, ev}) {
+  const col = color || SEV_COLOR[kind] || SEV_COLOR.warn;
+  const box = document.createElement('div');
+  box.className = 'toast ' + (kind || 'warn');
+  box.setAttribute('data-glass', '');
+  box.setAttribute('data-edge-alert', '');
+  // Tên camera của popup này — để onCleared() đóng đúng popup khi cảnh báo bị
+  // bỏ qua từ nơi khác (thẻ nhật ký, badge trên tile, nút trong trang chi tiết).
+  box.dataset.cam = name || '';
+  // 1:1 theo design Live Apple: 4 vet sang chay vien + lop bong tren + anh 16/9
+  // co pill canh bao o goc phai, roi tieu de/phu + gio, cuoi cung 2 nut vang/kinh.
+  box.innerHTML =
+    '<span data-edge="top"></span><span data-edge="right"></span>' +
+    '<span data-edge="bottom"></span><span data-edge="left"></span>' +
+    '<div class="t-gloss"></div>' +
+    '<div class="t-shot"><div class="t-scrim"></div>' +
+      '<span class="t-badge"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.1" ' +
+        'stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M10.3 4.2a2 2 0 0 1 3.4 0l7.1 12.6A2 2 0 0 1 19.1 20H4.9a2 2 0 0 1-1.7-3.2z"/>' +
+        '<path d="M12 9.4v4.2"/><path d="M12 16.6h.01"/></svg><b></b></span></div>' +
+    '<div class="t-body"><div class="t-row1"><div class="t-tt">' +
+        '<div class="t-ttl"></div><div class="t-sub"></div></div>' +
+      '<span class="t-time"></span></div>' +
+      '<div class="t-acts"><button class="go" data-goldbtn>Xem camera</button>' +
+      '<button class="skip">Bỏ qua</button></div></div>';
+  const badge = box.querySelector('.t-badge');
+  badge.style.background = 'linear-gradient(168deg,color-mix(in srgb, ' + col +
+    ' 30%, transparent),color-mix(in srgb, ' + col + ' 16%, transparent))';
+  badge.style.border = '1px solid color-mix(in srgb, ' + col + ' 50%, transparent)';
+  badge.querySelector('svg').style.stroke = col;
+  const sevEl = badge.querySelector('b');
+  sevEl.textContent = sev;
+  sevEl.style.color = col;
+  const now = new Date();   // design hien "dd/mm/yyyy · hh:mm:ss"
+  box.querySelector('.t-time').textContent =
+    [now.getDate(), now.getMonth() + 1, now.getFullYear()].map(pad).join('/') + ' · ' + hms(now);
+  box.querySelector('.t-ttl').textContent = title;
+  box.querySelector('.t-sub').textContent = sub || '';
+
+  const kill = () => box.remove();
+  // "Bỏ qua" = tat canh bao (het nhay vien), khong chi dong popup.
+  box.querySelector('.skip').onclick = () => { onSkip?.(); kill(); };
+  const goBtn = box.querySelector('.go');
+  const clip = ev && videoOf(ev) ? ev : null;
+  if (clip) {
+    goBtn.textContent = 'Xem lại';
+    goBtn.onclick = () => { kill(); openVideo(clip); };   // tu mo detail dung camera
+  } else if (name) {
+    goBtn.onclick = () => { kill(); openDetail(name); };
+  } else {
+    goBtn.remove();
+  }
+
+  if (img) {
+    const shot = box.querySelector('.t-shot');
+    const im = document.createElement('img');
+    im.className = 't-img';
+    im.alt = 'Ảnh phát hiện từ ' + (sub || 'camera');
+    if (clip) im.onclick = () => { kill(); openVideo(clip); };
+    else if (name) im.onclick = () => { kill(); openDetail(name); };
+    // THU TU QUAN TRONG: chen vao DOM va gan onerror TRUOC khi gan src.
+    shot.prepend(im);
+    im.onerror = () => im.remove();
+    im.src = img;
+  } else {
+    box.querySelector('.t-shot').remove();   // loi he thong khong co anh -> bo khung anh
+  }
+
+  // Design chi giu MOT popup: cai moi thay cai cu (khong xep chong).
+  $('#toasts').replaceChildren(box);
+  setTimeout(kill, kind === 'ok' ? 6000 : 20000);
+  return kill;
+}
+
+// Chi ghi lai trang thai, KHONG popup. Mat/khoi phuc ket noi da thay ro o badge
+// tren tile + bo loc "Co loi"; popup moi lan ngat/noi lai chi gay on.
+export function onStateChange(name, t) {
+  S.seen[name] = t.state;
+}
+
+/* ================= them camera (modal) ================= */
+
+const M = {media: '', test: 'idle', rows: null, added: 0};
+const validRtsp = u => /^rtsp:\/\/\S+$/i.test(u);
+const putStream = (name, src) => fetch(
+  API + '?name=' + encodeURIComponent(name) + '&src=' + encodeURIComponent(src),
+  {method: 'PUT'});
+
+function paintModal() {
+  const msg = {idle: 'Chưa kiểm tra · bấm "Kiểm tra kết nối"', testing: 'Đang thử kết nối…',
+               invalid: 'URL phải bắt đầu bằng rtsp://', ok: 'Kết nối được',
+               bad: 'Không kết nối được'}[M.test];
+  $('#mPrevMsg').textContent = msg;
+  const r = M.rows;
+  $('#mRows').innerHTML = !r ? row('—', 'chưa có dữ liệu', 'none')
+    : r.err ? row('Lỗi', String(r.err).slice(0, 60), 'err')
+    : row('Codec', r.codec || '—') + row('Phân giải', r.res || '—') +
+      row('Âm thanh', r.audio ? 'có' : 'không', r.audio ? '' : 'none');
+}
+
+function openModal() {
+  M.test = 'idle'; M.rows = null;
+  $('#mUrl').value = ''; $('#mName').value = '';
+  paintModal();
+  $('#modal').hidden = false;
+  $('#mUrl').focus();
+}
+
+/** Mo modal them camera voi URL/ten da dien san (tu Auto Search). */
+function prefillModal(url, name) {
+  M.test = 'idle'; M.rows = null;
+  $('#mUrl').value = url; $('#mName').value = name;
+  paintModal();
+  $('#modal').hidden = false;
+  $('#mUrl').focus();
+}
+
+/* ================= Auto Search camera (V1 DiscoverDevice) ================= */
+
+// Box quet LAN tim camera: PUT kich hoat, GET lay ket qua. Ca hai deu la endpoint
+// V1 (khong co trong PDF) — bridge proxy qua /api/discover + /api/discover/list.
+async function scanNetwork() {
+  const box = $('#discoverBox'), btn = $('#discoverBtn');
+  box.hidden = false;
+  box.innerHTML = '<div class="al-load">Đang quét mạng…</div>';
+  btn.disabled = true;
+  try {
+    const s = await cnPost('api/discover', {});
+    if (s.code !== 0) throw new Error(s.msg || 'code ' + s.code);
+    // Vendor UI doc ket qua ngay sau PUT; box chi tra sau khi scan da xong.
+    const j = await cnPost('api/discover/list', {});
+    if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+    const devs = j.data || [];
+    if (!devs.length) {
+      box.innerHTML = '<div class="al-load">Không tìm thấy camera nào trên mạng</div>';
+      return;
+    }
+    box.replaceChildren(...devs.map(d => {
+      const el = document.createElement('div');
+      el.className = 'd-row';
+      el.innerHTML = '<div class="d-main"><div class="d-l1"><span class="d-ip"></span>' +
+        '<span class="d-st"></span></div><span class="d-l2"></span></div>' +
+        '<button class="d-add">Thêm</button>';
+      el.querySelector('.d-ip').textContent = d.addr || d.ip;
+      el.querySelector('.d-st').textContent = d.manufacturer || '—';
+      el.querySelector('.d-l2').textContent =
+        (d.manufacturer || '—') + ' · ' + (d.addr || d.ip) + ' · chưa thêm vào box';
+      el.querySelector('.d-add').onclick = () => {
+        // Camera tim thay chua co mat khau -> mo modal de nguoi dung dien RTSP day du.
+        prefillModal('rtsp://' + d.ip + ':554/', d.ip);
+      };
+      return el;
+    }));
+  } catch (e) {
+    box.innerHTML = '<div class="al-load" style="color:var(--err2)">' +
+      'Không quét được: ' + e.message + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Thu bang chinh go2rtc: PUT ten tam roi doc /api/streams, xong thi DELETE.
+async function testUrl(src) {
+  const tmp = '_probe_' + Date.now();
+  try {
+    const p = await putStream(tmp, src);
+    if (!p.ok) return {err: (await p.text()) || 'PUT ' + p.status};
+    await new Promise(r => setTimeout(r, 1800));
+    const j = await fetch(API).then(r => r.json());
+    const o = j[tmp] || {};
+    const pr = o.producers?.[0];
+    if (!pr) return {err: 'go2rtc không mở được luồng'};
+    const rx = (pr.receivers || []).find(x => x.codec?.codec_type === 'video');
+    return {codec: rx ? nice(rx.codec.codec_name) : null,
+            res: rx?.codec?.width ? rx.codec.width + '×' + rx.codec.height : null,
+            audio: (pr.medias || []).some(m => m.startsWith('audio'))};
+  } catch (e) {
+    return {err: e.message};
+  } finally {
+    fetch(API + '?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
+  }
+}
+
+export async function removeStream(name) {
+  const cid = chIdOf(name);
+  if (!cid) return alert('Luồng ' + name + ' không phải camera box (không có channel_id)');
+  if (!confirm('Xoá camera "' + name + '" khỏi box?')) return;
+  const r = await cnPost('aibox/channel/delete', {channel_id_list: [cid]});
+  if (r.code !== 0) return alert(r.msg || 'Lỗi ' + r.code);
+  // Box da bo -> go2rtc cung bo luong cu khoi bi treo den khi sync_streams chay.
+  fetch(API + '?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
+  if (S.focus === name) go('live');
+  await refresh();
+  if (S.view === 'cam') loadCams();
+  toast({kind: 'ok', sev: 'ĐÃ XOÁ', title: 'Đã xoá camera ' + name});
+}
+
+/* ================= poll go2rtc ================= */
+
+async function refresh() {
+  try {
+    const j = await pollStreams();
+    const names = Object.keys(j).sort();
+    const changed = names.join() !== S.order.join();
+    S.order = names;
+    if (changed) drawGrid();
+    else [...S.tiles.keys()].forEach(paintTile);
+
+    const live = S.order.filter(n => tileState(n) === 'live').length;
+    $('#cOnline').textContent = live + '/' + S.order.length + ' LUỒNG PHÁT';
+    $('#dGo').style.background = 'var(--ok)';
+    $('#dGo').style.animation = 'omPulse 2s ease-in-out infinite';
+    if (S.view === 'detail') paintDetail();
+    // Vẽ lại badge đếm người ở đây chứ không chỉ trong markTiles: refresh() chạy mỗi 3s,
+    // chạy lúc boot, và chạy sau drawGrid (đổi trang/lọc/số cột làm tile dựng lại).
+    // Nhờ vậy badge không phụ thuộc vào việc CÓ SSE event tới hay không.
+    paintAreaBadge();
+    paintRail();
+  } catch {
+    $('#cOnline').textContent = 'GO2RTC KHÔNG PHẢN HỒI';
+    $('#dGo').style.background = 'var(--err)';
+    $('#dGo').style.animation = 'none';
+  }
+}
+
+$('#camRefresh').onclick = async () => {
+  const b = $('#camRefresh');
+  b.classList.add('spin');
+  const t0 = performance.now();
+  try {
+    await refresh();
+    // Nút "Làm mới" = reload lại luồng video thật: gán lại src cho <video-stream>
+    // (setter src -> onconnect() -> WebSocket/WebRTC nối lại) nên camera hiện rõ
+    // việc refresh (video re-buffer). Không làm trong auto-refresh 3s.
+    for (const [name, t] of S.tiles) {
+      if (t.player && t.box.isConnected)
+        t.player.src = new URL(G + 'api/ws?src=' + encodeURIComponent(name), location.href);
+    }
+  } finally {
+    // pollStreams() thường resolve trong vài ms (kết nối nóng) -> nếu bỏ spin ngay
+    // thì icon chưa kịp quay 1 khung hình. Giữ spin ít nhất 600ms để người dùng
+    // thấy rõ nút đang làm mới.
+    const rest = 600 - (performance.now() - t0);
+    if (rest > 0) await new Promise(r => setTimeout(r, rest));
+    b.classList.remove('spin');
+  }
+};
+
+/* ================= wiring chung ================= */
+
+$$('nav button').forEach(b => b.onclick = () => go(b.dataset.go));
+$('#back').onclick = () => { stopVideo(); go('live'); };
+
+/* ============ bảng thông báo trên dock "Nhật ký" ============ */
+// Bấm dock "Nhật ký" -> mở bảng thông báo (không thẳng tới view log). "Xem chi
+// tiết" / bấm thẻ mới go('log'). Dùng `unread` (khai báo sau ở scope module) —
+// chỉ chạy lúc click, sau khi module đã eval xong nên không vướng TDZ.
+const notifBtn = $('button[data-go="log"]');
+const notifPanel = $('#notifPanel');
+const notifList = $('#notifList');
+// Các thẻ người dùng đã "Đã xem" — thẻ chưa trong SEEN hiện chấm "chưa đọc".
+const SEEN = new Set();
+
+notifBtn.onclick = e => {
+  e.stopPropagation();
+  if (!notifPanel.hidden) { notifPanel.hidden = true; return; }
+  renderNotif();
+  // Neo dưới toàn bộ dock chuyển tab (nav[data-dock]), thẳng cạnh phải dock.
+  const dock = $('nav[data-dock]').getBoundingClientRect();
+  notifPanel.style.top = (dock.bottom + 8) + 'px';
+  notifPanel.style.right = (window.innerWidth - dock.right) + 'px';
+  notifPanel.hidden = false;
+};
+
+// "Đã xem": đánh dấu mọi thẻ hiện tại là đã đọc + xoá badge chưa đọc.
+// Dùng chung cho nút trong panel thông báo và nút trên toolbar nhật ký.
+function markAllSeen() {
+  alarms().filter(isDetect).forEach(a => SEEN.add(notifKey(a)));
+  FRESH.clear();                 // xoá luôn chip "MỚI" trên các dòng nhật ký
+  unread = 0;
+  $('#navUnread').hidden = true;
+  if (S.view === 'log') loadLog();   // đang ở nhật ký -> vẽ lại để bỏ chip "MỚI"
+  renderNotif();
+}
+$('#notifReadAll').onclick = e => { e.stopPropagation(); markAllSeen(); };
+$('#logReadAll').onclick = () => markAllSeen();
+
+$('#notifDetail').onclick = e => {
+  e.stopPropagation();
+  notifPanel.hidden = true;
+  go('log');
+};
+
+// Khóa nhận diện cho thẻ thông báo — giống tlRow: event_id nếu có, else ts.
+const notifKey = a => a.event_id != null ? String(a.event_id) : 'ts' + (a.ts || '0');
+
+function renderNotif() {
+  const rows = alarms().filter(isDetect).slice(0, 12);
+  if (!rows.length) {
+    const h = document.createElement('div');
+    h.className = 'notif-empty';
+    h.textContent = 'Chưa có cảnh báo nào từ AI box';
+    notifList.replaceChildren(h);
+    return;
+  }
+  notifList.replaceChildren(...rows.map(a => {
+    const card = document.createElement('div');
+    card.className = 'notif-card';
+    const key = notifKey(a);
+    const unreadDot = document.createElement('span');
+    unreadDot.className = 'notif-unread';
+    unreadDot.textContent = 'MỚI';
+    unreadDot.hidden = SEEN.has(key);
+    const dot = document.createElement('span');
+    dot.className = 'notif-dot';
+    dot.style.background = dot.style.color = colorOf(a.algo_model);
+    const b = document.createElement('div');
+    b.className = 'notif-b';
+    const t = document.createElement('div');
+    t.className = 'notif-t';
+    t.textContent = algoName(a.algo_model, a.algo_name) || a.label || '—';
+    const d = new Date((a.ts || 0) * 1000);
+    const s = document.createElement('div');
+    s.className = 'notif-s';
+    s.textContent = [a.channel_name || camOf(a), a.ipc_addr,
+      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())]
+      .filter(Boolean).join(' · ') || '—';
+    b.append(t, s);
+    // "MỚI" nằm SÁT PHẢI (sau dot + nội dung), sáng nhờ CSS .notif-unread.
+    card.append(dot, b, unreadDot);
+    card.onclick = () => {
+      notifPanel.hidden = true;
+      go('log');
+      highlightLog(key);
+    };
+    return card;
+  }));
+}
+
+// Cuộn tới và highlight thẻ vừa chọn trong view log (sau go() đã paint lại).
+function highlightLog(key) {
+  const row = $('#logBox').querySelector('.tl-row[data-id="' + key + '"]');
+  if (!row) return;
+  row.scrollIntoView({block: 'center', behavior: 'smooth'});
+  row.classList.add('hl');
+  setTimeout(() => row.classList.remove('hl'), 3400);
+}
+
+$('#fList').replaceChildren(...FILTERS.map(f => {
+  const b = document.createElement('div');
+  b.className = 'mrow' + (f.k === S.filter ? ' on' : '');
+  b.innerHTML = '<span class="l"></span><span class="k"></span>';
+  b.querySelector('.l').textContent = f.l;
+  b.onclick = () => {
+    S.filter = f.k; S.page = 0;
+    $('#fMenu').hidden = true;
+    $$('#fList .mrow').forEach((x, i) => x.classList.toggle('on', FILTERS[i].k === f.k));
+    drawGrid();
+  };
+  return b;
+}));
+
+$('#fBtn').onclick = e => {
+  e.stopPropagation();
+  $$('#fList .mrow').forEach((b, i) => {
+    const k = FILTERS[i].k;
+    b.querySelector('.k').textContent = String(S.order.filter(n =>
+      k === 'live' ? tileState(n) === 'live' : k === 'down' ? isDown(n) : true).length);
+  });
+  const m = $('#fMenu');
+  m.hidden = !m.hidden;
+  $('#fBtn').style.borderColor = m.hidden ? '' : 'var(--gold3)';
+};
+$('#fMenu').onclick = e => e.stopPropagation();
+document.addEventListener('click', () => {
+  $('#fMenu').hidden = true;
+  $('#fBtn').style.borderColor = '';
+  $('#layoutMenu').hidden = true;
+  $('#layoutBtn').style.borderColor = '';
+});
+
+// Bố cục lưới: nút dropdown mở 3 lựa chọn (2x2/3x3/4x4) như nút lọc.
+const LAYOUTS = [[2, '2×2'], [3, '3×3'], [4, '4×4']];
+$('#layoutList').replaceChildren(...LAYOUTS.map(([c, l]) => {
+  const b = document.createElement('div');
+  b.className = 'mrow' + (c === S.cols ? ' on' : '');
+  b.innerHTML = '<span class="l"></span><span class="k"></span>';
+  b.querySelector('.l').textContent = l;
+  b.onclick = () => {
+    S.cols = c; S.page = 0;
+    $('#layoutLabel').textContent = l;
+    $('#layoutMenu').hidden = true;
+    $('#layoutBtn').style.borderColor = '';
+    $$('#layoutList .mrow').forEach(x => x.classList.toggle('on', x === b));
+    drawGrid();
+  };
+  return b;
+}));
+$('#layoutBtn').onclick = e => {
+  e.stopPropagation();
+  const m = $('#layoutMenu');
+  m.hidden = !m.hidden;
+  $('#layoutBtn').style.borderColor = m.hidden ? '' : 'var(--gold3)';
+};
+$('#layoutMenu').onclick = e => e.stopPropagation();
+$('#pgPrev').onclick = () => { if (S.page > 0) { S.page--; drawGrid(); } };
+$('#pgNext').onclick = () => { S.page++; drawGrid(); };
+
+$('#addBtn').onclick = openModal;
+$('#discoverBtn').onclick = scanNetwork;
+$('#mClose').onclick = $('#mCancel').onclick = () => $('#modal').hidden = true;
+$('#modal').onclick = e => { if (e.target === $('#modal')) $('#modal').hidden = true; };
+$$('#mMedia button').forEach(b => b.onclick = () => {
+  M.media = b.dataset.media;
+  $$('#mMedia button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('#mUrl').oninput = () => { M.test = 'idle'; M.rows = null; paintModal(); };
+
+// '#video' la query cua go2rtc: bo track audio ngay o nguon
+const srcOf = () => {
+  const u = fixPct($('#mUrl').value.trim());
+  return M.media === 'video' && !u.includes('#') ? u + '#video' : u;
+};
+
+$('#mTest').onclick = async () => {
+  if (!validRtsp($('#mUrl').value.trim())) { M.test = 'invalid'; return paintModal(); }
+  M.test = 'testing'; M.rows = null; paintModal();
+  const r = await testUrl(srcOf());
+  M.rows = r; M.test = r.err ? 'bad' : 'ok';
+  paintModal();
+};
+
+// Them camera = tao channel TREN BOX (POST /api/v2/channel/add, type=2 rtsp truc tiep),
+// khong con ghi thang vao go2rtc nua. Box la nguon that; luong go2rtc van ten
+// ch<channel_id> theo quy uoc cua sync_streams(), nen UI ghep alarm <-> camera van chay.
+$('#mAdd').onclick = async () => {
+  // URL gui box: box percent-DECODE rtsp truoc khi luu, nen '%' trong password phai
+  // thanh '%25' truoc khi gui (raw '%@' bi box tu choi 60062 Invalid Arguments).
+  // Bridge _add_channel() tu escape. fixPct()/srcOf() chi dung cho go2rtc (no cung
+  // can %25), khong gui len box.
+  const url = $('#mUrl').value.trim(), name = $('#mName').value.trim();
+  if (!validRtsp(url)) { M.test = 'invalid'; return paintModal(); }
+  // Vendor web (AddChannel.3c964a69.js): nameRules = required + <=64 + not-blank.
+  if (!name || !name.trim()) return alert('Tên camera: bắt buộc, không được chỉ toàn khoảng trắng');
+  if (name.length > 64) return alert('Tên camera: tối đa 64 ký tự');
+  // Vendor web: rtsp <=1023 bytes. NHUNG rtsp co credential dai -> validate chu, khong byte.
+  if (url.length > 256) return alert('URL RTSP tối đa 256 ký tự (cẩn thận với credential dài)');
+  const hint = $('#mHint').textContent;
+  $('#mHint').textContent = 'Đang thêm vào box…';
+  $('#mAdd').disabled = true;          // click doi = tao 2 channel trung tren box
+  let j;
+  try {
+    j = await cnPost('api/channel/add',
+                     {channel_name: name, rtsp: url, transport_type: 1});
+  } catch (e) {
+    j = {code: -1, msg: e.message};
+  } finally {
+    $('#mAdd').disabled = false;
+    $('#mHint').textContent = hint;
+  }
+  if (j.code !== 0) {
+    return alert('Box từ chối: ' + (j.msg || 'code ' + j.code) +
+                 (j.step ? `\n(bước ${j.step})` : '') + (j.hint ? '\n' + j.hint : ''));
+  }
+  const cid = (j.data || {}).channel_id;
+  const stream = cid != null ? 'ch' + cid : null;
+  // PHAI tu tao luong go2rtc, khong duoc doi sync_streams(): no bo qua channel moi
+  // khi /channel/list chua tra `rtsp` (bang chung t_add.json: them channel_id 10
+  // thanh cong nhung sync chi added:['ch9'] -> ch10 bien mat, grid trong khong).
+  // srcOf() = fixPct(url) va them '#video' neu chon "Chi video" — '#video' la cua
+  // go2rtc, box khong hieu, nen chi gan o day chu khong gui len box.
+  if (stream) await putStream(stream, srcOf());
+  $('#modal').hidden = true;
+  await refresh();
+  // Nút "Thêm camera" nằm ở tab Camera: refresh() chỉ vẽ lại lưới live, phải nạp
+  // lại bảng /api/cameras thì luồng vừa thêm mới hiện ra trước mặt người dùng.
+  if (S.view === 'cam') loadCams();
+  toast({kind: 'ok', sev: 'ĐÃ THÊM', title: 'Box đã nhận camera ' + name,
+         sub: stream ? 'luồng ' + stream : '', name: stream && S.api[stream] ? stream : null});
+};
+
+/* detail: cac nut tren stage */
+$('#dReload').onclick = () => S.focus && openDetail(S.focus);
+$('#dAI').onclick = () => S.focus && openAI(S.focus);
+$('#dAiCta').onclick = () => S.focus && openAI(S.focus);
+$('#dPlay').onclick = () => {
+  const v = dPlayer?.video;
+  if (!v) return;
+  v.paused ? v.play() : v.pause();
+  $('#dPlay').textContent = v.paused ? '▶' : '⏸';
+};
+$('#dMute').onclick = () => {
+  const v = dPlayer?.video;
+  if (!v) return;
+  v.muted = !v.muted;
+  $('#dMute').textContent = v.muted ? '🔇' : '🔊';
+};
+$('#dFull').onclick = () => {
+  const st = $('#stage');
+  document.fullscreenElement ? document.exitFullscreen() : st.requestFullscreen?.();
+};
+
+const tick = () => $('#clock').textContent = hms(new Date());
+
+/* ================= tab Camera: bang 7 cot ================= */
+
+// Do tre KHONG co trong API box -> lay tu go2rtc (RTT WebRTC / bitrate).
+const latOf = name => {
+  const t = S.tiles.get(name);
+  if (t?.player?.rtt != null) return t.player.rtt + ' ms';
+  const b = S.bps[name];
+  return b ? b.toFixed(1) + ' Mbps' : '—';
+};
+
+async function loadCams() {
+  const list = $('#camList');
+  list.innerHTML = '<div class="al-load">Đang đọc danh sách camera…</div>';
+  try {
+    const j = await cameraList();
+    if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+    const cams = j.data || [];
+    const hr = await hashrate(1, []).catch(() => ({}));
+    const v = (hr.data || {}).hashrate;
+    $('#camHr').textContent = v != null ? v + '%' : '—';
+    $('#camHr').style.color = v == null ? '' : v < 20 ? 'var(--err2)'
+      : v < 50 ? 'var(--warn)' : 'var(--ok)';
+    const bar = $('#camHrBar');
+    bar.style.width = (v == null ? 0 : v) + '%';
+    bar.className = v == null ? '' : v < 20 ? 'err' : v < 50 ? 'warn' : '';
+
+    list.replaceChildren(...cams.map(camRow));
+  } catch (e) {
+    list.innerHTML = '<div class="al-load" style="color:var(--err2)"></div>';
+    list.firstChild.textContent = 'Không đọc được /api/cameras: ' + e.message;
+  }
+}
+
+const SVG_GEAR = 'M12 9.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6M19 12a7 7 0 0 0-.1-1.1l1.8-1.4'
+  + '-1.8-3.1-2.1.9a7 7 0 0 0-1.8-1.1L14.6 4H9.4l-.4 2.2a7 7 0 0 0-1.8 1.1l-2.1-.9L3.3 9.5l1.8 1.4'
+  + 'a7 7 0 0 0 0 2.2l-1.8 1.4 1.8 3.1 2.1-.9a7 7 0 0 0 1.8 1.1L9.4 20h5.2l.4-2.2a7 7 0 0 0 1.8-1.1'
+  + 'l2.1.9 1.8-3.1-1.8-1.4A7 7 0 0 0 19 12';
+const SVG_CAM = 'M3.4 7.6h11.2v8.8H3.4zM14.6 10.6l6-2.6v8.4l-6-2.6';
+const SVG_PENCIL = 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41'
+  + 'l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
+const SVG_TRASH = 'M5 7h14M9.5 7V4.4h5V7M7 7l1 13h8l1-13M11 10.5v6M13 10.5v6';
+const icoHtml = (cls, title, path) => '<span class="ico ' + cls + '" title="' + title +
+  '"><svg viewBox="0 0 24 24"><path d="' + path + '"/></svg></span>';
+
+function camRow(c) {
+  const el = document.createElement('div');
+  el.className = 'trow';
+  const algos = c.algos || [], nm = c.stream;
+  el.innerHTML =
+    '<span class="c-id"></span>' +
+    '<div style="min-width:0"><div class="c-nm"></div><div class="c-md"></div>' +
+      '<div class="c-algos"></div></div>' +
+    '<span class="c-zone"></span><span class="c-url"></span><span class="c-lat"></span>' +
+    '<span class="c-st"><span class="dot"></span><span class="s"></span></span>' +
+    '<div class="c-act">' +
+      '<span class="c-aibtn" data-goldbtn title="Cấu hình AI"><svg viewBox="0 0 24 24"><path d="' +
+        SVG_GEAR + '"/></svg>Cấu hình AI</span>' +
+      icoHtml('', 'Chỉnh sửa camera', SVG_PENCIL) +
+      icoHtml('rm', 'Xoá camera', SVG_TRASH) +
+    '</div>';
+  el.querySelector('.c-id').textContent = nm;
+  el.querySelector('.c-nm').textContent = c.name || '—';
+  el.querySelector('.c-md').textContent = c.model || c.ip || '';
+  // Box khong co field "Khu vuc" -> dung channel_name (nguoi dung dat theo vi tri)
+  el.querySelector('.c-zone').textContent = c.name || '—';
+  el.querySelector('.c-url').textContent = mask(S.api[nm]?.producers?.[0]?.url || '—');
+  el.querySelector('.c-lat').textContent = latOf(nm);
+  const st = el.querySelector('.c-st');
+  st.className = 'c-st ' + (c.status === 1 ? '' : 'off');
+  st.querySelector('.s').textContent = c.status === 1 ? 'ONLINE' : 'OFFLINE';
+
+  // Design chỉ hiện SỐ thuật toán trên dòng phụ, không liệt kê chip: vài hàng ×
+  // vài chip mỗi hàng là nhiễu thị giác; chi tiết từng thuật toán đã có trong
+  // panel Cấu hình AI của chính camera đó.
+  el.querySelector('.c-algos').textContent =
+    algos.length ? algos.length + ' thuật toán AI' : 'chưa bật AI';
+  const [cfg, view, del] = el.querySelectorAll('.c-act > *');
+  // openAI() suy channel_id tu ten stream ch<id> nen phai truyen dung dang do
+  cfg.onclick = e => { e.stopPropagation(); openAI(nm); };
+  view.onclick = e => { e.stopPropagation(); openEdit(c); };
+  del.onclick = e => { e.stopPropagation(); removeStream(nm); };
+  // Bấm vào thẻ = xem stream (hành vi mong đợi khi click một camera).
+  // Cấu hình AI vẫn ở icon bánh xe.
+  el.onclick = () => openDetail(nm);
+  return el;
+}
+
+/* ================= sua camera (form chinh sua) ================= */
+
+const EC = {cid: null, stream: '', rtsp: '', transport: 1};
+
+function openEdit(c) {
+  EC.cid = c.channel_id; EC.stream = c.stream; EC.rtsp = c.rtsp || '';
+  $('#eTitle').textContent = c.stream + ' · ' + (c.name || '—');
+  $('#eName').value = c.name || '';
+  $('#eRtsp').value = mask(c.rtsp || '');
+  $('#eUser').value = c.username || '';
+  $('#ePass').value = '';
+  $('#eCustom').value = c.custom_code || '';
+  EC.transport = c.transport_type === 2 ? 2 : 1;
+  $$('#eTransport button').forEach(b =>
+    b.classList.toggle('on', +b.dataset.t === EC.transport));
+  $('#eHint').textContent = '';
+  $('#editModal').hidden = false;
+  $('#eName').focus();
+}
+
+$$('#eTransport button').forEach(b => b.onclick = () => {
+  EC.transport = +b.dataset.t;
+  $$('#eTransport button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('#eClose').onclick = $('#eCancel').onclick = () => $('#editModal').hidden = true;
+$('#editModal').onclick = e => { if (e.target === $('#editModal')) $('#editModal').hidden = true; };
+
+$('#eSave').onclick = async () => {
+  const name = $('#eName').value.trim();
+  const shown = $('#eRtsp').value.trim();
+  const rtsp = mergeRtsp(EC.rtsp, shown, $('#eUser').value.trim(), $('#ePass').value);
+  if (!name) return alert('Channel Name: bắt buộc');
+  if (name.length > 64) return alert('Channel Name: tối đa 64 ký tự');
+  if (!/^rtsp:\/\/\S+$/i.test(rtsp)) return alert('RTSP URL: không hợp lệ (không tìm thấy mật khẩu cũ?)');
+  if (rtsp.length > 256) return alert('RTSP URL: tối đa 256 ký tự');
+  const hint = $('#eHint').textContent;
+  $('#eHint').textContent = 'Đang lưu…';
+  $('#eSave').disabled = true;              // click doi = 2 lan update
+  let j;
+  try {
+    j = await cnPost('api/channel/update', {
+      channel_id: EC.cid, channel_name: name, rtsp,
+      transport_type: EC.transport, custom_code: $('#eCustom').value.trim(),
+    });
+  } catch (e) {
+    j = {code: -1, msg: e.message};
+  } finally {
+    $('#eSave').disabled = false;
+    $('#eHint').textContent = hint;
+  }
+  if (j.code !== 0) return alert('Box từ chối: ' + (j.msg || 'code ' + j.code));
+  $('#editModal').hidden = true;
+  // URL vua doi -> luong go2rtc van giu src cu; PUT lai de khoi can restart.
+  await putStream(EC.stream, fixPct(rtsp));
+  await refresh();
+  if (S.view === 'cam') loadCams();
+  toast({kind: 'ok', sev: 'ĐÃ LƯU', title: 'Đã cập nhật ' + name, sub: EC.stream});
+};
+
+/* ================= nhat ky ================= */
+
+export const loadLog = () => paintAlarms();
+
+// Mau cham moc theo nhom thuat toan. Key phai khop CHINH XAC ALGO_CAT trong
+// ai.js — 8 nhom, khong phai ten tu dat.
+const KIND_COLOR = {
+  'Chức năng chung': '#d9a233',
+  'Môi trường': '#5fe3d0',
+  'Bảo hộ lao động (PPE)': '#ff4d4f',
+  'Hành vi': '#e8a020',
+  'Phương tiện': '#7aa2f7',
+  'Sự kiện đường cao tốc': '#c48a29',
+  'Thuỷ lợi / Quản lý đô thị': '#3ddc97',
+  'AlertFree': '#8b9aa8',
+  'Khác': '#8b9aa8',
+};
+const colorOf = m => {
+  const g = algoGroups([m])[0];
+  return KIND_COLOR[g?.cat] || KIND_COLOR['Khác'];
+};
+
+// Nhung alarm vua toi trong phien nay -> chip "MỚI"
+const FRESH = new Set();
+let logCats = null;   // null = tat ca; Set = cac category user tick
+
+function paintAlarms() {
+  const box = $('#logBox');
+  const all = alarms().filter(isDetect);
+  const cat = a => algoGroups([a.algo_model])[0]?.cat || 'Khác';
+  const cats = [...new Set(all.map(cat))].sort();
+  if (logCats) {
+    logCats = new Set([...logCats].filter(c => cats.includes(c)));
+    if (logCats.size === cats.length) logCats = null;
+  }
+  paintLogFilter(cats, all);
+  const rows = (logCats ? all.filter(a => logCats.has(cat(a))) : all).slice(0, 150);
+  if (!rows.length) {
+    box.innerHTML = '<div class="hint">Chưa có cảnh báo nào từ AI box</div>';
+    return;
+  }
+  const d0 = new Date((rows[0].ts || 0) * 1000);
+  const head = document.createElement('div');
+  head.className = 'tl-day';
+  head.innerHTML = '<span class="d"></span><div class="ln"></div>';
+  head.querySelector('.d').textContent =
+    'Hôm nay · ' + pad(d0.getDate()) + '/' + pad(d0.getMonth() + 1);
+
+  const tl = document.createElement('div');
+  tl.className = 'tl';
+  tl.replaceChildren(...rows.map(tlRow));
+  box.replaceChildren(head, tl);
+}
+
+function paintLogFilter(cats, all) {
+  const cat = a => algoGroups([a.algo_model])[0]?.cat || 'Khác';
+  const list = $('#logFilterList');
+  if (!list) return;
+  list.replaceChildren(...cats.map(c => {
+    const b = document.createElement('div');
+    b.className = 'mrow' + (logCats && logCats.has(c) ? ' on' : '');
+    b.innerHTML = '<span class="dot"></span><span class="l"></span><span class="k"></span>' +
+      '<svg class="ck" viewBox="0 0 24 24" fill="none" stroke="#2a2410" stroke-width="2.6" ' +
+        'stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+    b.querySelector('.dot').style.background = KIND_COLOR[c] || KIND_COLOR['Khác'];
+    b.querySelector('.l').textContent = c;
+    b.querySelector('.k').textContent = String(all.filter(a => cat(a) === c).length);
+    b.onclick = e => {
+      e.stopPropagation();
+      if (!logCats) {
+        logCats = new Set(cats.filter(x => x !== c));
+        if (logCats.size === 0) logCats = null;
+      } else if (logCats.has(c)) {
+        logCats.delete(c);
+        if (logCats.size === 0) logCats = null;
+      } else {
+        logCats.add(c);
+      }
+      paintAlarms();
+    };
+    return b;
+  }));
+  const lbl = $('#logFilterLabel');
+  if (lbl) lbl.textContent = logCats ? [...logCats].join(', ') : 'Tất cả';
+}
+
+$('#logFilter').onclick = e => {
+  e.stopPropagation();
+  const m = $('#logFilterMenu');
+  m.hidden = !m.hidden;
+  $('#logFilter').style.borderColor = m.hidden ? '' : 'var(--gold3)';
+};
+$('#logFilterMenu').onclick = e => e.stopPropagation();
+document.addEventListener('click', () => {
+  const m = $('#logFilterMenu');
+  if (m) { m.hidden = true; $('#logFilter').style.borderColor = ''; }
+  // Dong panel Telegram khi click ngoai (da stopPropagation tren #tgRefresh
+  // va #tgPanel nen chi dong khi click o noi khac).
+  const p = $('#tgPanel');
+  if (p && !p.hidden) p.hidden = true;
+  const n = $('#notifPanel');
+  if (n && !n.hidden) n.hidden = true;
+});
+// Panel FIXED gan vao nut -> cuon trang thi dong de khong troi noi bat cuong vi.
+window.addEventListener('scroll', () => {
+  const p = $('#tgPanel');
+  if (p && !p.hidden) p.hidden = true;
+  const n = $('#notifPanel');
+  if (n && !n.hidden) n.hidden = true;
+}, true);
+
+function tlRow(a) {
+  const t = new Date((a.ts || 0) * 1000);
+  const col = colorOf(a.algo_model);
+  const cam = camOf(a);
+  const el = document.createElement('div');
+  el.className = 'tl-row';
+  el.dataset.id = a.event_id != null ? String(a.event_id) : 'ts' + (a.ts || '0');
+  el.innerHTML =
+    '<div class="tl-t"><span class="tl-hm"></span><span class="tl-sec"></span></div>' +
+    '<div class="tl-mid"><div class="ln"></div><span class="tl-dot"></span></div>' +
+    '<div class="tl-b">' +
+      '<div class="tl-th"><div class="no">không ảnh</div><div class="sc"></div>' +
+        '<span class="cam"></span></div>' +
+      '<div class="tl-mn"><div class="tl-chips"><span class="tl-kind"></span></div>' +
+        '<span class="tl-ttl"></span><span class="tl-sub"></span></div>' +
+      '<div class="tl-r"><span class="tl-conf"></span>' +
+        '<div class="tl-bar"><i></i></div><span class="tl-more">Xem lại →</span></div>' +
+    '</div>';
+
+  el.querySelector('.tl-hm').textContent = pad(t.getHours()) + ':' + pad(t.getMinutes());
+  el.querySelector('.tl-sec').textContent = ':' + pad(t.getSeconds());
+  const dot = el.querySelector('.tl-dot');
+  dot.style.background = col;
+  dot.style.color = col;              // box-shadow dung currentColor de tao quang sang
+
+  const g = algoGroups([a.algo_model])[0];
+  const kind = el.querySelector('.tl-kind');
+  kind.textContent = (g?.cat || 'Khác').toUpperCase();
+  kind.style.color = col;
+  kind.style.borderColor = col + '40';
+
+  el.querySelector('.tl-ttl').textContent =
+    algoName(a.algo_model, a.algo_name) || a.label || '—';
+  el.querySelector('.tl-sub').textContent =
+    [a.channel_name || cam, a.ipc_addr].filter(Boolean).join(' · ') || '—';
+  el.querySelector('.tl-th .cam').textContent = cam || '';
+
+  // Box KHONG tra do tin cay trong alarm push -> khong bay so gia. An ca thanh.
+  el.querySelector('.tl-r').firstElementChild.remove();
+  el.querySelector('.tl-bar').remove();
+
+  // Camera DANG báo động -> nút "Bỏ qua" trên thẻ: tắt viền đỏ + badge + popup
+  // của lần phát hiện này (clearAlarm cho cả camera, đúng ngữ nghĩa hiện có).
+  if (cam && activeAlarm(cam)) {
+    const b = document.createElement('button');
+    b.className = 'tl-skip';
+    b.textContent = 'Bỏ qua';
+    b.title = 'Tắt mọi hiệu ứng cảnh báo của lần phát hiện này';
+    b.onclick = e => { e.stopPropagation(); clearAlarm(cam); };
+    el.querySelector('.tl-r').prepend(b);
+  }
+
+  if (FRESH.has(a.event_id)) {
+    const n = document.createElement('span');
+    n.className = 'tl-new';
+    n.textContent = 'MỚI';
+    el.querySelector('.tl-chips').append(n);
+  }
+
+  const img = imgOf(a);
+  if (img) {
+    const im = document.createElement('img');
+    im.alt = 'Ảnh phát hiện ' + (algoName(a.algo_model) || '');
+    im.loading = 'lazy';
+    const th = el.querySelector('.tl-th');
+    // Chen vao DOM va gan onerror TRUOC khi gan src, keo bi race
+    th.prepend(im);
+    im.onerror = () => im.remove();
+    im.src = img;
+  }
+  // Người được nhận diện (a.person do aibox.py thêm từ compare_results):
+  // ảnh to bằng ảnh camera (.tl-th), giữa tên hành vi (.tl-mn) và nút Xem lại (.tl-r).
+  // Tên + độ chính xác phủ lên ảnh như .cam phủ lên ảnh camera — không khung viền.
+  const per = a.person;
+  if (per) {
+    const pb = document.createElement('div');
+    pb.className = 'tl-per';
+    if (per.image) {
+      const im = document.createElement('img');
+      im.alt = 'Ảnh người được nhận diện';
+      im.loading = 'lazy';
+      im.onerror = () => im.remove();
+      // Giong imgOf(): anh live la basename 'alarms/x.jpg' (tuong doi), doc lai la
+      // '/aibox/picture?...' (tuyet doi). Phai chuan hoa cung cach de khong lech.
+      const pi = per.image;
+      im.src = new URL(BASE + (pi.startsWith('/') ? pi.slice(1) : 'alarms/' + pi),
+        location.href).href;
+      pb.append(im);
+    }
+    // Thông tin nhận diện ghi rõ ra BÊN PHẢI ảnh (cột riêng, không phủ lên ảnh).
+    const txt = document.createElement('div');
+    txt.className = 'tl-per-txt';
+    const nm = document.createElement('div');
+    nm.className = 'tl-per-nm';
+    nm.textContent = per.name || '—';
+    txt.append(nm);
+    if (per.similarity != null) {
+      const sc = document.createElement('div');
+      sc.className = 'tl-per-sc';
+      sc.textContent = 'Độ chính xác ' + per.similarity + '%';
+      txt.append(sc);
+    }
+    pb.append(txt);
+    // Giữa tên hành vi (.tl-mn) và nút Xem lại (.tl-r): lùi trái từ cạnh phải thẻ.
+    el.querySelector('.tl-mn').after(pb);
+    // Badge nhận diện người, ngay BÊN PHẢI badge loại (.tl-kind) trong .tl-chips.
+    const badge = document.createElement('span');
+    badge.className = 'tl-per-badge';
+    badge.textContent = (per.name ? per.name + ' · ' : '') +
+      (per.similarity != null ? per.similarity + '%' : 'nhận diện');
+    el.querySelector('.tl-chips').append(badge);
+  }
+  if (videoOf(a)) {
+    const p = document.createElement('div');
+    p.className = 'tl-play';
+    p.innerHTML = '<span>&#9654;</span>';
+    el.querySelector('.tl-th').append(p);
+    el.querySelector('.tl-more').textContent = 'Xem lại →';
+    el.onclick = () => openVideo(a);
+  } else if (cam && S.api[cam]) {
+    el.querySelector('.tl-more').textContent = 'Mở camera →';
+    el.onclick = () => openDetail(cam);
+  } else {
+    el.querySelector('.tl-more').remove();
+    el.style.cursor = 'default';
+  }
+  return el;
+}
+
+$('#logRefresh').onclick = loadLog;
+
+/* ================= xem lai clip ================= */
+
+// Clip chieu tren CHINH khung stage cua trang chi tiet, khong phai modal rieng.
+// Box cat clip theo khoang thoi gian, KHONG luu san file -> moi lan mo la 1 request
+// GET vao box (~1.4 MB, 3s).
+let vod = null;                  // {el, msg} khi dang xem lai, null khi dang live
+
+function openVideo(a) {
+  const url = videoOf(a);
+  if (!url) return;
+  const cam = camOf(a);
+  // Clip chieu tren stage cua detail -> phai dang o detay dung camera do truoc
+  if (S.view !== 'detail' || S.focus !== cam) {
+    if (!cam || !S.api[cam]) return toast({
+      sev: 'KHÔNG CÓ LUỒNG', kind: 'warn',
+      title: 'Camera này không có luồng trên go2rtc nên không mở được khung xem lại'});
+    openDetail(cam);
+  }
+  stopVideo();                   // dang xem clip khac -> thay bang clip nay
+  detachDetailPlayer();          // thao player live, GIU S.focus
+
+  const stage = $('#stage');
+  const el = document.createElement('video');
+  el.className = 'vod-v';
+  el.controls = true;
+  el.autoplay = true;
+  el.playsInline = true;
+  const msg = document.createElement('div');
+  msg.className = 'vod-msg';
+  msg.textContent = 'Đang tải clip từ AI box…';
+  // Chen vao DOM va gan handler TRUOC khi gan src, keo bi race
+  stage.prepend(el, msg);
+  el.onloadeddata = () => msg.remove();
+  el.onerror = () => {
+    msg.className = 'vod-msg err';
+    msg.textContent = 'Không tải được clip. Box chỉ giữ video trong thời gian ngắn — '
+      + 'cảnh báo cũ có thể đã bị xoá khỏi bộ nhớ box.';
+  };
+  el.src = url;
+  vod = {el, msg};
+
+  // Nut LIVE xam + bam duoc de ve luong truc tiep
+  const live = $('#dLive');
+  // Bo 'wait' (mo .35 khi luong chua len hinh) thay vi chong lai no bang opacity
+  // inline — nut nay dang la nut bam duoc, khong duoc mo.
+  live.classList.remove('wait');
+  live.classList.add('back');
+  live.title = 'Bấm để trở về luồng trực tiếp';
+  // Giu nguyen chu LIVE khi xem lai: gio cua clip da hien o thanh lich su va #dQual,
+  // doi nhan thanh "XEM LAI <gio>" chi lam badge dai ra va lap thong tin.
+  $('#dQual').textContent = algoName(a.algo_model, a.algo_name) || a.label || 'Clip phát hiện';
+  paintHistory();                // danh dau clip dang mo trong thanh lich su
+}
+
+/** Bo clip, tra khung stage ve luong truc tiep. */
+function stopVideo() {
+  if (!vod) return;
+  vod.el.pause();
+  vod.el.removeAttribute('src');   // huy request dang tai, khong keo tiep nen
+  vod.el.load();
+  vod.el.remove();
+  vod.msg.remove();
+  vod = null;
+  const live = $('#dLive');
+  live.classList.remove('back');
+  live.title = '';
+  live.lastChild.textContent = 'LIVE';
+}
+
+function backToLive() {
+  const name = S.focus;
+  stopVideo();
+  if (name) openDetail(name);      // dung lai player live tu dau
+}
+
+$('#dLive').onclick = () => { if (vod) backToLive(); };
+
+/* ================= trang thai box tren header ================= */
+
+let boxName = '';
+function boxDot(txt, col, pulse) {
+  $('#cBox').textContent = txt;
+  $('#cBox').style.color = col;
+  const d = $('#dBox');
+  d.style.background = col;
+  d.style.animation = pulse ? 'omPulse 2s ease-in-out infinite' : 'none';
+}
+
+let boxBusy = false;
+async function checkBox() {
+  if (boxBusy) return;
+  boxBusy = true;
+  try {
+    let d;
+    try {
+      const j = await (await fetch(BASE + 'api/conn',
+        {signal: AbortSignal.timeout(6000)})).json();
+      d = j.data || {};
+    } catch {
+      return boxDot('AI BOX MẤT KẾT NỐI', 'var(--err2)');   // aibox.py chua chay
+    }
+    if (!d.host) return boxDot('AI BOX CHƯA CẤU HÌNH', 'var(--warn)');
+    if (!d.has_pass) return boxDot('AI BOX THIẾU MẬT KHẨU', 'var(--warn)');
+    boxDot('AI BOX ĐANG THỬ…', 'var(--dim)');
+    const r = await fetch(BASE + 'api/conn/test', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await r.json();
+    if (j.code === 0) {
+      boxName = (j.data || {}).device_name || (j.data || {}).model || d.host;
+      boxDot('AI BOX ' + boxName, 'var(--ok)', true);
+    } else {
+      // code 3 = sai user/pass, 1000-1004 = loi dang nhap, -1 = khong toi duoc box
+      boxDot('AI BOX LỖI ' + j.code, 'var(--err2)');
+    }
+  } catch {
+    boxDot('AI BOX KHÔNG PHẢN HỒI', 'var(--err2)');
+  } finally {
+    boxBusy = false;
+  }
+}
+
+/* ================= canh bao: popup + vien nhay + lich su ================= */
+
+let unread = 0;
+const bumpUnread = () => {
+  unread++;
+  const b = $('#navUnread');
+  b.hidden = false;
+  b.textContent = unread > 99 ? '99+' : String(unread);
+};
+
+startAlarms(ev => {
+  if (ev.kind === 'sse' || !isDetect(ev)) { markTiles(); return; }
+  // Đánh dấu thẻ vừa tới là MỚI -> thẻ trong tab Nhật ký hiện badge "MỚI".
+  if (ev.event_id != null) { FRESH.add(ev.event_id); if (FRESH.size > 200) FRESH.clear(); }
+  const cam = camOf(ev);
+  markTiles();
+  if (S.view === 'log') loadLog();            // KHÔNG reset unread — số giữ đến khi bấm "Đã xem"
+  else bumpUnread();
+  if (S.view === 'live' || (S.view === 'detail' && S.focus === cam)) paintHistory();
+}, name => {                                    // clearAlarm -> ve lai ngay
+  // clearAlarm là CHỖ DUY NHẤT mọi nút "Bỏ qua" đi qua (popup, badge tile,
+  // #histAck, thẻ nhật ký) -> tắt hết hiệu ứng của lần phát hiện ở đúng một nơi.
+  markTiles();
+  if (S.view === 'log') loadLog();              // nút "Bỏ qua" trên thẻ biến mất
+  if (S.view === 'live' || (S.view === 'detail' && S.focus === name)) paintHistory();
+  paintRail();
+});
+
+/** Vien nhay do tren tile dang canh bao. */
+function markTiles() {
+  for (const [name, t] of S.tiles) {
+    const a = activeAlarm(name);
+    t.box.classList.toggle('detect', !!a);
+    let b = t.box.querySelector('.t-ai');
+    if (!a) { b?.remove(); continue; }
+    if (!b) {
+      b = document.createElement('span');
+      b.className = 'badge off t-ai';
+      b.title = 'Bấm để bỏ qua cảnh báo';
+      b.onclick = e => { e.stopPropagation(); clearAlarm(name); };
+      t.box.querySelector('.t-top').insertBefore(b, t.ar);
+    }
+    b.textContent = '⚠ ' + a.n;
+  }
+  paintAreaBadge();
+  paintRail();
+}
+
+/** Số người trong vùng (AreaRuleData) real-time: badge riêng NGAY TRÁI LIVE, không phải
+ *  cảnh báo. Camera có bật thuật toán thì badge LUÔN hiện — chưa có số thì hiện '—', có
+ *  số thì hiện SỐ CUỐI CÙNG (kể cả đã cũ; box không đẩy đều, đo thật ch7 im tới 975s).
+ *  `|| areaCount` là đường lùi: không đọc được /api/cameras (bridge tắt, xem từ máy khác)
+ *  thì vẫn hiện theo dữ liệu như trước. Badge nằm sẵn trong template nên không còn
+ *  createElement/append/remove. Chạy từ markTiles (mỗi SSE) và từ refresh() (3s). */
+function paintAreaBadge() {
+  for (const [name, t] of S.tiles) {
+    // Chưa có số (mới refresh) thì hiện 0, không hiện '—': box đẩy cả 0 nên '0 người'
+    // là trạng thái thật. Chỉ ẩn khi camera không bật thuật toán lẫn chưa từng có số.
+    const c = areaCount(name);
+    t.ar.hidden = !(areaOn(name) || c);
+    t.ar.textContent = '👥 ' + (c?.n ?? 0);
+  }
+}
+
+/** Ve MOT thanh lich su: wrap=khung .hist-list, nEl=dong dem, ackEl=nut bo qua (null neu khong co). */
+export function paintHistBar(wrap, nEl, ackEl, list, active, emptyMsg) {
+  if (!wrap) return;
+  nEl.textContent = list.length ? list.length + ' cảnh báo' : 'chưa có cảnh báo';
+  if (ackEl) ackEl.hidden = !active;
+  if (!list.length) {
+    wrap.innerHTML = '<span class="h-none"></span>';
+    wrap.firstChild.textContent = emptyMsg;
+    return;
+  }
+  wrap.replaceChildren(...list.slice(0, 40).map(x => {
+    const el = document.createElement('div');
+    el.className = 'h-item';
+    el.innerHTML = '<div class="h-noimg">không ảnh</div>' +
+      '<div class="h-meta"><span class="h-algo"></span><span class="h-time"></span></div>';
+    el.querySelector('.h-algo').textContent = algoName(x.algo_model, x.algo_name) || x.label;
+    el.querySelector('.h-time').textContent = hms(new Date((x.ts || 0) * 1000));
+    const img = imgOf(x);
+    if (img) {
+      const im = document.createElement('img');
+      im.alt = 'Ảnh phát hiện ' + (algoName(x.algo_model) || '');
+      im.loading = 'lazy';
+      el.firstElementChild.replaceWith(im);
+      im.onerror = () => im.replaceWith(Object.assign(document.createElement('div'),
+        {className: 'h-noimg', textContent: 'ảnh lỗi'}));
+      im.src = img;
+    }
+    // Chi mot phan alarm co clip -> chi bay nut play khi that su co
+    if (videoOf(x)) {
+      const pl = document.createElement('div');
+      pl.className = 'h-play';
+      pl.innerHTML = '<span>&#9654;</span>';
+      el.append(pl);
+      el.title = 'Bấm để xem lại clip';
+      el.onclick = () => openVideo(x);
+    } else {
+      el.title = 'Cảnh báo này không có clip';
+    }
+    return el;
+  }));
+}
+
+/** Thanh lich su o detail (camera dang focus) + thanh toan box o man Live (#hist2). */
+export function paintHistory() {
+  const name = S.focus;
+  paintHistBar($('#hist'), $('#histN'), $('#histAck'),
+    name ? alarmsOf(name) : [], name ? activeAlarm(name) : null,
+    'Chưa có cảnh báo nào từ AI box cho camera này');
+  paintHistBar($('#hist2'), $('#histN2'), null,
+    alarms().filter(isDetect), null,
+    'Chưa có cảnh báo nào từ AI box');
+  // Man Live: so = so canh bao MOI (unread) giong badge nhat ky, khong phai tong 300.
+  $('#histN2').textContent = unread ? unread + ' cảnh báo mới' : 'chưa có cảnh báo mới';
+}
+
+/** Rail trai man Live: danh sach camera cuon doc. Giu lai card cu (RAIL) va chi cap
+ *  nhat field doi de khong mat hover moi lan ve. Card dung chinh class .trow cua
+ *  bang camera (id | ten | trang thai) cho hieu ung va ngoai hinh giong nhau. */
+const RAIL = new Map();
+const CAMN = new Map();          // stream -> ten camera (tu /api/cameras)
+async function seedCamNames() {
+  try {
+    const j = await cameraList();
+    if (j.code === 0) for (const c of j.data || []) CAMN.set(c.stream, c.name || c.stream);
+  } catch (e) { /* khe */ }
+  paintRail();
+}
+function railCard(nm) {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'trow rail-row';
+  el.innerHTML = '<span class="c-id"></span>' +
+    '<div class="rail-b"><span class="c-nm"></span></div>' +
+    '<span class="rail-al"></span>' +
+    '<span class="rail-ms"></span>' +
+    '<span class="c-st"><span class="dot"></span><span class="s"></span></span>';
+  el.querySelector('.c-id').textContent = nm;
+  el.onclick = () => openDetail(nm);
+  RAIL.set(nm, el);
+  return el;
+}
+function paintRail() {
+  const wrap = $('#rail');
+  if (!wrap) return;
+  const names = S.order || [];
+  $('#railN').textContent = names.length + ' camera';
+  for (const [nm, el] of [...RAIL]) if (!names.includes(nm)) { el.remove(); RAIL.delete(nm); }
+  names.forEach((nm, i) => {
+    const el = RAIL.get(nm) || railCard(nm);
+    if (wrap.children[i] !== el) wrap.insertBefore(el, wrap.children[i] || null);
+    const st = statusOf(nm);
+    el.classList.toggle('off', st.cls === 'off');
+    el.classList.toggle('wait', st.cls === 'wait');
+    el.classList.toggle('al', !!activeAlarm(nm));
+    el.querySelector('.c-nm').textContent = CAMN.get(nm) || nm;
+    // Badge số người trong vùng: đặt BÊN TRÁI nút LIVE, cùng màu tím như trên tile.
+    const ms = el.querySelector('.rail-ms');
+    const ac = areaCount(nm);
+    // Đồng bộ với tile (paintAreaBadge): chưa có số thì hiện 0, không hiện '—'.
+    if (areaOn(nm) || ac) { ms.hidden = false; ms.textContent = '👥 ' + (ac ? ac.n : 0); }
+    else ms.hidden = true;
+    // Badge số cảnh báo: đồng bộ với tile (markTiles) — dùng activeAlarm(nm).n,
+    // KHÔNG dùng alarmsOf().length (số bản ghi lịch sử khác số cảnh báo đang báo).
+    const al = el.querySelector('.rail-al');
+    const nAl = activeAlarm(nm)?.n || 0;
+    if (nAl > 0) { al.hidden = false; al.textContent = '⚠ ' + nAl; }
+    else al.hidden = true;
+    const sEl = el.querySelector('.c-st');
+    // Chi hien pill trang thai khi LIVE / OFFLINE — khong hien "TAM DUNG"/"DANG KET NOI".
+    sEl.hidden = st.cls === 'wait';
+    sEl.classList.toggle('off', st.cls === 'off');
+    sEl.querySelector('.s').textContent = st.txt;
+  });
+}
+
+$('#histAck').onclick = () => S.focus && clearAlarm(S.focus);
+
+// Lan chuot tren thanh lich su -> truot ngang (thanh nay cao 150px, khong scroll doc).
+// passive:false vi co preventDefault. Chi chan khi con cho truot theo huong do, khong
+// thi cuon den dau thanh lai chan luon scroll cua trang.
+const histWheel = e => {
+  const el = e.currentTarget, max = el.scrollWidth - el.clientWidth;
+  if (max <= 0) return;
+  const d = e.deltaY || e.deltaX;
+  if ((d < 0 && el.scrollLeft <= 0) || (d > 0 && el.scrollLeft >= max - 1)) return;
+  e.preventDefault();
+  el.scrollLeft += d;
+};
+for (const hid of ['#hist', '#hist2'])
+  $(hid).addEventListener('wheel', histWheel, {passive: false});
+
+/* ================= tab Cau hinh: ket noi box ================= */
+
+const cnState = (txt, col) => {
+  $('#cnState').textContent = txt;
+  $('#cnState').style.color = col || '';
+};
+
+async function cnLoad() {
+  try {
+    const j = await (await fetch(BASE + 'api/conn')).json();
+    const d = j.data || {};
+    $('#cnHost').value = d.host || '';
+    $('#cnPort').value = d.port || 80;
+    $('#cnUser').value = d.user || 'admin';
+    cnState(d.host ? 'Đã lưu · ' + d.host + ':' + d.port : 'Chưa cấu hình',
+            d.host ? 'var(--ok)' : 'var(--warn)');
+    // Telegram — dong chip "Đã cấu hình · N nhóm" tren card
+    tgSel = new Set(d.tg_chats || []);
+    renderTgGroups();
+    tgState(d.has_tg ? 'Đã cấu hình · ' + tgSel.size + ' nhóm' : 'Chưa cấu hình',
+            d.has_tg ? 'var(--ok)' : '');
+  } catch {
+    cnState('Không đọc được cấu hình (aibox.py chưa chạy?)', 'var(--err2)');
+  }
+}
+
+const cnPost = async (path, body) => {
+  const r = await fetch(BASE + path, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {}), signal: AbortSignal.timeout(25000),
+  });
+  return r.json();
+};
+
+/* Select "Đăng ký alarm" (Platform 1|2) — nút giả + panel menu glass, cao = ô điền bên cạnh. */
+let dkSlot = 1;
+const dkSlotClose = () => {
+  const m = $('#dkSlotMenu');
+  m.hidden = true;
+  $('#dkSlotBtn').setAttribute('aria-expanded', 'false');
+};
+const dkSlotOpen = () => {
+  // Panel FIXED top-level (dat cuoi body, khoi .card/.nosb) -> khong bi stacking-context
+  // cua card che. Dat ngay duoi nut bang getBoundingClientRect (nhu #tgPanel).
+  const btn = $('#dkSlotBtn'), m = $('#dkSlotMenu');
+  m.hidden = false;
+  const r = btn.getBoundingClientRect();
+  m.style.left = r.left + 'px';
+  m.style.width = r.width + 'px';
+  m.style.top = (r.bottom + 8 + m.offsetHeight > innerHeight - 8
+    ? r.top - m.offsetHeight - 8 : r.bottom + 8) + 'px';
+  $('#dkSlotBtn').setAttribute('aria-expanded', 'true');
+};
+const dkToggle = e => {
+  e && e.stopPropagation();
+  const m = $('#dkSlotMenu');
+  if (m.hidden) dkSlotOpen(); else dkSlotClose();
+};
+$('#dkSlotBtn').addEventListener('pointerdown', dkToggle);   // pointerdown: khong bi chan boi click overlay
+$('#dkSlotMenu').addEventListener('click', e => {
+  const it = e.target.closest('.mrow[data-slot]');
+  if (!it) return;
+  dkSlot = +it.dataset.slot;
+  $('#dkSlotLbl').textContent = 'Platform ' + dkSlot;
+  $('#dkSlotMenu').querySelectorAll('.mrow').forEach(x => x.classList.toggle('on', +x.dataset.slot === dkSlot));
+  dkSlotClose();
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#dkSlotBtn, #dkSlotMenu')) dkSlotClose();
+});
+
+$('#cnSave').onclick = async () => {
+  cnState('Đang lưu…');
+  try {
+    const j = await cnPost('api/conn', {
+      host: $('#cnHost').value.trim(), port: +$('#cnPort').value || 80,
+      user: $('#cnUser').value.trim(), pass: $('#cnPass').value,
+      slot: dkSlot,
+    });
+    if (j.code !== 0) return cnState(j.msg || 'Lỗi ' + j.code, 'var(--err2)');
+    $('#cnPass').value = '';
+    const dk = (j.data || {}).docking || {};
+    cnState(dk.ok ? 'Đã lưu · alarm → platform ' + dk.slot : 'Đã lưu · chưa đăng ký alarm',
+            dk.ok ? 'var(--ok)' : 'var(--warn)');
+    checkBox();
+  } catch (e) {
+    cnState(e.message, 'var(--err2)');
+  }
+};
+
+$('#cnTest').onclick = async () => {
+  cnState('Đang thử kết nối…');
+  try {
+    const j = await cnPost('api/conn/test');
+    if (j.code !== 0) return cnState('Lỗi ' + j.code + ': ' + (j.msg || ''), 'var(--err2)');
+    const d = j.data || {};
+    const boxTxt = 'OK · ' + (d.device_name || d.model || '') + ' · SN ' + (d.device_sn || '—');
+    // Kiem tra luon platform 1|2 trong box: ai dang giu, slot nao trong. Dong 2.
+    try {
+      const k = await cnPost('api/conn/docking/info');
+      const slots = (k.data || {}).slots || [];
+      const who = s => s.enabled ? s.owner : 'trống';
+      const txt = slots.map(s => `P${s.slot}: ${who(s)}`).join(' · ');
+      cnState(boxTxt + '\nPlatform ' + txt, 'var(--ok)');
+    } catch (e) {
+      cnState(boxTxt, 'var(--ok)');   // box loi doc docking -> chi dong 1
+    }
+  } catch (e) {
+    cnState(e.message, 'var(--err2)');
+  }
+};
+
+$('#cnSync').onclick = async () => {
+  cnState('Đang đồng bộ camera từ box…');
+  try {
+    const j = await cnPost('api/sync');
+    if (j.code !== 0) return cnState(j.msg || 'Lỗi ' + j.code, 'var(--err2)');
+    // added/kept/removed là MẢNG tên luồng, không phải số đếm.
+    const n = a => (a || []).length;
+    cnState(`Đồng bộ xong · thêm ${n(j.added)} · xoá ${n(j.removed)} · giữ ${n(j.kept)}`, 'var(--ok)');
+    await refresh();
+    // refresh() chỉ vẽ lại lưới go2rtc; bảng Camera đọc /api/cameras nên phải nạp riêng.
+    if (S.view === 'cam') loadCams();
+  } catch (e) {
+    cnState(e.message, 'var(--err2)');
+  }
+};
+
+/* ---- Telegram: đẩy cảnh báo (ảnh/video + thông tin) vào nhóm ---- */
+let tgSel = new Set();          // chat_id da tick (chon de gui)
+let tgGroups = [];              // [{id,title,type}] bot tung thay (getUpdates)
+const tgState = (txt, col) => {
+  const el = $('#tgState');
+  el.textContent = txt;
+  el.classList.toggle('ok', col === 'var(--ok)');
+  el.classList.toggle('err', col === 'var(--warn)' || col === 'var(--err2)');
+};
+
+function renderTgGroups() {
+  const box = $('#tgGroups');
+  const warn = () => {
+    if (tgSel.size) return null;
+    const w = document.createElement('div');
+    w.style.cssText = 'display:flex;gap:8px;align-items:flex-start;padding:9px 11px;margin:0 0 8px;border-radius:11px;border:1px solid rgba(255,171,64,.45);background:rgba(255,171,64,.10);font:600 11.5px/1.45 var(--b);color:#ffb24d';
+    w.textContent = '⚠ Chưa tick nhóm nào — bot SẼ KHÔNG gửi thông báo. Tick ít nhất 1 nhóm bên dưới rồi Lưu.';
+    return w;
+  };
+  // gộp: nhom da quet + chat_id da luu (de tick ke ca nhom chua quet lai duoc)
+  const ids = [...new Set([...tgGroups.map(g => g.id), ...tgSel])];
+  const byId = Object.fromEntries(tgGroups.map(g => [g.id, g]));
+  if (!ids.length) {
+    box.textContent = '';
+    const w = warn(); if (w) box.appendChild(w);
+    const h = document.createElement('span');
+    h.className = 'hint';
+    h.textContent = 'Chưa thấy nhóm nào — thêm bot vào nhóm Telegram rồi bấm "Quét nhóm" lại.';
+    box.appendChild(h);
+    return;
+  }
+  const rows = ids.map(id => {
+    const g = byId[id] || {id, title: id, type: ''};
+    const on = tgSel.has(id);
+    const lab = document.createElement('label');
+    lab.style.cssText = 'display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:11px;border:1px solid rgba(255,255,255,.1);cursor:pointer;margin:0 0 6px;background:'
+      + (on ? 'rgba(213,194,149,.14)' : 'rgba(255,255,255,.03)') + ';border-color:'
+      + (on ? 'rgba(213,194,149,.5)' : 'rgba(255,255,255,.1)') + ';transition:background .18s,border-color .18s';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = on;
+    cb.style.cssText = 'width:15px;height:15px;accent-color:var(--gold);flex:none;cursor:pointer';
+    const t = document.createElement('span');
+    t.style.cssText = 'flex:1;min-width:0;font:600 12.5px/1.2 var(--b);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    t.textContent = g.title || id;
+    const s = document.createElement('span');
+    s.style.cssText = 'flex:none;font:400 10px/1 var(--m);color:var(--ghost)';
+    s.textContent = (g.type ? g.type + ' · ' : '') + id;
+    cb.onchange = () => {
+      if (cb.checked) tgSel.add(id); else tgSel.delete(id);
+      lab.style.background = cb.checked ? 'rgba(213,194,149,.14)' : 'rgba(255,255,255,.03)';
+      lab.style.borderColor = cb.checked ? 'rgba(213,194,149,.5)' : 'rgba(255,255,255,.1)';
+      // cap nhat lai canh bao "chua tick" ngay khi thay doi tick
+      const old = box.querySelector('.tg-nosel'); if (old) old.remove();
+      if (!tgSel.size) { const w = warn(); if (w) { w.classList.add('tg-nosel'); box.prepend(w); } }
+    };
+    lab.append(cb, t, s);
+    return lab;
+  });
+  const w = warn(); if (w) w.classList.add('tg-nosel');
+  box.replaceChildren(...(w ? [w, ...rows] : rows));
+}
+
+$('#tgRefresh').onclick = async e => {
+  e.stopPropagation();              // khong de document-click dong panel vua mo
+  // Panel la FIXED (top-level, khong bi .nosb cat) -> dat ngay duoi nut "Quét nhóm".
+  // Mo truoc roi do offsetHeight (cung mot tick, browser chua kip paint nen khong loe),
+  // neu khong du cho o duoi thi lat len tren.
+  const p = $('#tgPanel');
+  p.hidden = false;
+  const r = e.currentTarget.getBoundingClientRect();
+  p.style.left = Math.min(r.left, innerWidth - 480) + 'px';
+  p.style.top = (r.bottom + 8 + p.offsetHeight > innerHeight - 8
+    ? r.top - p.offsetHeight - 8 : r.bottom + 8) + 'px';
+  tgState('Đang quét nhóm…');
+  try {
+    const j = await cnPost('api/tg/groups');
+    tgGroups = (j.data && j.data.groups) || [];
+    if (j.data && j.data.selected) tgSel = new Set(j.data.selected);
+    renderTgGroups();
+    if (!tgGroups.length) {
+      tgState(j.code === 0 ? 'Chưa thấy nhóm nào — thêm bot vào nhóm rồi quét lại' : (j.msg || 'Lỗi'),
+              j.code === 0 ? 'var(--warn)' : 'var(--err2)');
+    } else {
+      tgState('Thấy ' + tgGroups.length + ' nhóm — tick rồi bấm Lưu', 'var(--ok)');
+    }
+  } catch (e) {
+    tgState(e.message, 'var(--err2)');
+  }
+};
+
+// Click BEN TRONG panel (tick nhom, nut nut) khong duoc dong panel -> chan bong.
+$('#tgPanel').onclick = e => e.stopPropagation();
+$('#tgClose').onclick = () => { $('#tgPanel').hidden = true; };
+
+// Chat ID thủ công -> van vao danh sach trong panel va duoc tick ngay.
+// getUpdates khong thay nhom "im lang" (24h khong ai nhan) -> ID tay la cach duy
+// nhat them duoc. Hoi getChat de hien ten that thay vi chuoi so kho doc.
+$('#tgAdd').onclick = async () => {
+  const v = $('#tgChatManual').value.trim();
+  if (!v) return;
+  const btn = $('#tgAdd'); btn.disabled = true;
+  tgState('Đang lấy thông tin nhóm…');
+  try {
+    let title = v;
+    let cid = v;
+    try {
+      const j = await cnPost('api/tg/chatname', {id: v});
+      if (j.code === 0 && j.data && j.data.title) { title = j.data.title; cid = j.data.id || v; }
+      else {
+        // getChat that bai => bot KHONG trong nhom / ID sai -> gui sau se 400.
+        // Dung lai, bao loi ro thay vi them ID loi roi 400 khi "Gửi thử".
+        tgState(j.msg || 'Không lấy được thông tin nhóm — bot chưa trong nhóm hoặc ID sai', 'var(--err2)');
+        return;
+      }
+    } catch (e) { /* loi mang (khong xac minh duoc) -> van cho them */ }
+    // Luu id CHUAN (canonical -100...) tu getChat, khong giu id nguoi dung go:
+    // go id cu cua supergroup -> HTTP 400 khi gui.
+    tgSel.add(cid);
+    const g = tgGroups.find(x => x.id === cid);
+    if (g) g.title = title; else tgGroups.push({id: cid, title, type: ''});
+    $('#tgChatManual').value = '';
+    renderTgGroups();
+    tgState('Đã thêm nhóm: ' + title, 'var(--ok)');
+  } catch (e) {
+    tgState(e.message, 'var(--err2)');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$('#tgSave').onclick = async () => {
+  tgState('Đang lưu…');
+  try {
+    const j = await cnPost('api/conn/tgsave', {
+      tg_token: $('#tgToken').value, tg_chats: [...tgSel],
+    });
+    if (j.code !== 0) return tgState(j.msg || 'Lỗi ' + j.code, 'var(--err2)');
+    $('#tgToken').value = '';
+    const d = j.data || {};
+    tgSel = new Set(d.tg_chats || []);
+    tgState(d.has_tg ? 'Đã lưu · đẩy tới ' + tgSel.size + ' nhóm' : 'Đã tắt (chưa tick nhóm nào)', 'var(--ok)');
+    $('#tgPanel').hidden = true;    // luu xong dong panel chon nhom
+  } catch (e) {
+    tgState(e.message, 'var(--err2)');
+  }
+};
+
+$('#tgTest').onclick = async () => {
+  if (!tgSel.size) return tgState('Chưa tick nhóm nào', 'var(--warn)');
+  tgState('Đang gửi thử…');
+  try {
+    // luu truoc de backend gui dung danh sach dang tick
+    const s = await cnPost('api/conn/tgsave', {tg_token: $('#tgToken').value, tg_chats: [...tgSel]});
+    if (s.code !== 0) return tgState(s.msg || 'Lỗi lưu', 'var(--err2)');
+    $('#tgToken').value = '';
+    const j = await cnPost('api/conn/tgtest');
+    if (j.code !== 0) return tgState(j.msg || 'Lỗi ' + j.code, 'var(--err2)');
+    tgState(j.msg || 'Đã gửi — mở nhóm Telegram để xem', 'var(--ok)');
+  } catch (e) {
+    tgState(e.message, 'var(--err2)');
+  }
+};
+
+/* ================= tab Cau hinh: chon 20 thuat toan cho box ================= */
+
+const AL = {sup: [], loaded: [], sel: new Set(), max: 20};
+
+async function loadAlgos() {
+  cnLoad();
+  const wrap = $('#alCats');
+  wrap.innerHTML = '<div class="al-load">Đang đọc thuật toán từ box…</div>';
+  try {
+    const j = await algoAll();
+    if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+    const d = j.data || {};
+    AL.sup = d.supported || [];
+    AL.loaded = d.loaded || [];
+    AL.max = d.max || 20;
+    AL.sel = new Set(AL.loaded);
+    if (!AL.sup.length) {
+      wrap.innerHTML = '<div class="al-load">Box không trả thuật toán nào (/algo/list rỗng)</div>';
+      return;
+    }
+    paintAlgos();
+  } catch (e) {
+    wrap.innerHTML = '<div class="al-load" style="color:var(--err2)"></div>';
+    wrap.firstChild.textContent = 'Không đọc được /algo/list: ' + e.message;
+  }
+}
+
+function paintAlgos() {
+  const n = AL.sel.size, full = n >= AL.max;
+  const label = n + '/' + AL.max + ' thuật toán';
+  $('#alCnt').textContent = label;
+  $('#alCnt2').textContent = label;
+  $('#alCnt').className = $('#alCnt2').className = 'al-cnt' + (full ? ' full' : '');
+  $('#alBar').style.width = (n / Math.max(1, AL.max) * 100) + '%';
+  $('#alHint').textContent = full
+    ? 'Đã đạt giới hạn ' + AL.max + ' thuật toán — bỏ bớt trước khi chọn thêm'
+    : 'Box giới hạn ' + AL.max + ' thuật toán nạp cùng lúc';
+
+  // Nhom theo Algorithm Function nhu web UI box (algoGroups o ai.js)
+  $('#alCats').replaceChildren(...algoGroups(AL.sup).map(g => {
+    const cat = document.createElement('div');
+    cat.className = 'al-cat';
+    cat.innerHTML = '<div class="al-cat-h"><span class="al-cat-n"></span>' +
+                    '<span class="al-cat-c"></span></div><div class="al-grid"></div>';
+    cat.querySelector('.al-cat-n').textContent = g.cat;
+    const chosen = g.models.filter(m => AL.sel.has(m)).length;
+    cat.querySelector('.al-cat-c').textContent = chosen + '/' + g.models.length;
+    cat.querySelector('.al-grid').replaceChildren(...g.models.map(m => {
+      const on = AL.sel.has(m);
+      const el = document.createElement('div');
+      el.className = 'al-item' + (on ? ' on' : '') + (!on && full ? ' dis' : '');
+      el.innerHTML = '<span class="al-box"></span><span class="al-nm"></span>';
+      el.querySelector('.al-nm').textContent = algoName(m);
+      el.title = m;
+      el.onclick = () => {
+        if (AL.sel.has(m)) AL.sel.delete(m);
+        else if (AL.sel.size >= AL.max) return;
+        else AL.sel.add(m);
+        paintAlgos();
+      };
+      return el;
+    }));
+    return cat;
+  }));
+}
+
+// Body cua endpoint luu 20 thuat toan chua tim ra (/algo/capabilities tra
+// DeviceCapabilities -> la endpoint DOC). Nen mo web box de doi, khong ghi mu.
+$('#alSave').onclick = async () => {
+  const models = [...AL.sel];
+  const btn = $('#alSave'), st = $('#alState');
+  if (!models.length) { st.textContent = 'Chưa chọn thuật toán nào'; st.className = 'cn-state err'; return; }
+  btn.disabled = true;
+  st.className = 'cn-state';
+  st.textContent = 'Đang kiểm tra công suất…';
+  try {
+    // Kiem tra cong suat TRUOC khi ghi: status_code 52040 = khong du cong suat
+    const hr = await hashrate(1, models);
+    if (hr.status_code === 52040) {
+      st.className = 'cn-state err';
+      st.textContent = 'Box báo không đủ công suất cho bộ này — bỏ bớt thuật toán';
+      return;
+    }
+    st.textContent = 'Đang nạp vào box…';
+    const j = await algoSave(models);
+    if (j.code === 0) {
+      st.className = 'cn-state ok';
+      st.textContent = `Đã nạp ${models.length} thuật toán`;
+      toast({kind: 'ok', sev: 'ĐÃ NẠP', title: `Box đã nhận ${models.length} thuật toán`});
+      loadAlgos();
+      return;
+    }
+    // Bridge da thu 4 shape body; ca 4 fail -> noi that, kem duong mo web box
+    st.className = 'cn-state err';
+    st.textContent = j.msg || 'Box từ chối (code ' + j.code + ')';
+    console.warn('algo/capabilities đã thử:', j.tried);
+    toast({kind: 'warn', sev: 'CHƯA LƯU ĐƯỢC',
+      title: 'Box không nhận lệnh nạp thuật toán qua API',
+      sub: 'Endpoint có thật nhưng chưa rõ định dạng — bấm "Đổi trên web box" để nạp thủ công'});
+  } catch (e) {
+    st.className = 'cn-state err';
+    st.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$('#alWeb').onclick = async () => {
+  const j = await (await fetch(BASE + 'api/conn')).json().catch(() => ({}));
+  const host = (j.data || {}).host;
+  if (host) window.open('http://' + host + '/#/smart-capabilities/algorithmic-capability', '_blank');
+  else toast({sev: 'CHƯA CÓ IP', title: 'Chưa cấu hình IP của box', kind: 'warn'});
+};
+
+/* ================= thuat toan cua camera dang mo (sidebar detail) ================= */
+
+async function paintDetailAlgos() {
+  const el = $('#dAlgos'), name = S.focus;
+  el.innerHTML = row('…', 'đang đọc từ box', 'dim');
+  try {
+    const j = await cameraList();
+    if (name !== S.focus) return;            // user doi camera trong luc cho box
+    if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+    const cam = (j.data || []).find(c => c.stream === name);
+    if (!cam) { el.innerHTML = row('—', 'không phải channel của AI BOX', 'none'); return; }
+    const algos = cam.algos || [];
+    el.innerHTML = algos.length
+      ? algos.map(m => row(algoName(m), 'đang chạy', 'ok')).join('')
+      : row('—', 'chưa bật thuật toán nào', 'none');
+  } catch (e) {
+    if (name === S.focus) el.innerHTML = row('Lỗi', e.message, 'err');
+  }
+}
+
+/* ================= THƯ VIỆN (dữ liệu THẬT từ box) =================
+   Box CÓ endpoint thư viện nhận diện (dao duoc tu JS vendor): personlib/person
+   (khuôn mặt) và workclotheslib/workclothes (đồng phục). Mỗi mục mang image_path
+   dang /api/v2/smart/picture?Type=3&Index=... -> đổi sang GET /aibox/picture?...
+   thi browser ve duoc anh. KHONG dung lich su canh bao — day la du lieu goc tren
+   box. XSS: moi chuoi tu box di qua textContent, khong noi suy innerHTML.
+
+   DELETE khac nhau giua 2 loai: personlib/delete nhan {lib_id:[array]} con
+   workclotheslib/delete nhan {lib_id:scalar}. Dung mot ham delLib() de khoi loi. */
+
+const LIB = {face: null, ppe: null, err: '', busy: false};
+const LIB_PAGE = 24;
+let libTab = 'face';                // 'face' | 'ppe'
+let libFilterLib = null;            // null = tat ca, else lib_id (person & workcloth CO THE trung id)
+let libFilterKind = null;           // 'face' | 'ppe' - loai cua libFilterLib, de phan biet id trung
+let libQ = '';                      // loc theo ten ben client (data da tai het roi)
+let libPage = 0;
+
+// Ep chuan: bo dau van hoa truoc khi khop. Go "NGUYEN" van tim ra "Nguyễn".
+const norm = t => String(t || '').toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '');
+// row() noi suy value vao innerHTML khong ma hoa (chi dung cho chu so/nghia).
+// Moi chuoi tu BOX phai qua escHTML truoc khi vao row() de tranh XSS.
+const escHTML = t => String(t == null ? '' : t)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const libImg = p => {
+  const q = String(p || '').split('?')[1];
+  return q ? new URL(BASE + 'aibox/picture?' + q, location.href).href : null;
+};
+const libDate = s => { const d = new Date((s || 0) * 1000);
+  return isNaN(d) || !s ? '' : pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(); };
+const libName = x => x.person_name || x.lib_name || ('#' + (x.person_id || x.workclothes_id));
+// Box khong co may vi dien tu: dung chu the la khuon mat / bo quan ao.
+const MODEL = {0: ['Chưa chạy', 'warn'], 1: ['Chưa chạy', 'warn'], 2: ['Đang chạy', 'warn'],
+               3: ['Đã nhận diện', 'ok'], 4: ['Lỗi', 'err']};
+const libModel = m => MODEL[m] ? '<span class="lib-ms ' + MODEL[m][1] + '">' + MODEL[m][0] + '</span>' : '';
+
+// personlib khac workclotheslib o khoa danh sach ('list' vs 'workcloth_lib_list'),
+// person/list va workclothes/list deu BAT BUOC lib_id -> phai lay tung lib roi moi ket noi.
+// Tra ve {libs:[], items:[]}: items la mang phang moi mục, moi mục mang them lib_name.
+async function fetchLib(kind) {
+  const face = kind === 'face';
+  const L = face ? ['personlib', 'person', 'list'] : ['workclotheslib', 'workclothes', 'workcloth_lib_list'];
+  const j = await cnPost('aibox/' + L[0] + '/list', {page: 1, pagesize: 200});
+  if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+  const libs = ((j.data || {})[L[2]] || []);
+  const items = [];
+  for (const lb of libs) {
+    const it = await cnPost('aibox/' + L[1] + '/list', {page: 1, pagesize: 999, lib_id: lb.lib_id});
+    for (const x of ((it.data || {}).list || (it.data || {}).workclothes_list || []))
+      items.push(Object.assign({lib_name: lb.lib_name}, x));
+  }
+  return {libs, items};
+}
+
+async function loadLibrary(force) {
+  if (LIB.busy) return;
+  if ((LIB.face || LIB.ppe) && !force) { paintLibrary(); return; }
+  LIB.busy = true; LIB.err = '';
+  $('#libRefresh').classList.add('spin');
+  paintLibrary();
+  try {
+    const [face, ppe] = await Promise.all([fetchLib('face'), fetchLib('ppe')]);
+    LIB.face = face; LIB.ppe = ppe;
+  } catch (e) {
+    LIB.err = 'Không đọc được thư viện từ box: ' + e.message;
+  } finally {
+    LIB.busy = false;
+    $('#libRefresh').classList.remove('spin');
+    applyDefaultLib();
+    paintLibLibMenu();
+    paintLibrary();
+  }
+}
+
+function libCard(x, kind) {
+  const el = document.createElement('div');
+  el.className = 'lib-card';
+  el.innerHTML = '<div class="lib-img"></div><div class="lib-meta">' +
+    '<span class="lib-name"></span><span class="lib-sub"></span></div>';
+  const img = el.querySelector('.lib-img'), url = libImg(x.image_path);
+  if (url) img.style.backgroundImage = 'url(' + JSON.stringify(url) + ')';
+  // Badge trạng thái model nằm trên ảnh (góc trên phải), không nối vào dòng sub.
+  const ms = libModel(x.modeling_type);
+  if (ms) img.insertAdjacentHTML('beforeend', ms);
+  el.querySelector('.lib-name').textContent = libName(x);
+  el.querySelector('.lib-sub').textContent = (kind === 'face'
+    ? [x.lib_name, x.tel].filter(Boolean).join(' · ')
+    : ['#' + x.workclothes_id, libDate(x.create_time)].filter(Boolean).join(' · '));
+  el.title = (kind === 'face' ? 'Nhân sự: ' : 'Đồng phục: ') + libName(x);
+  el.onclick = () => openLibDetail(x, kind);
+  return el;
+}
+
+function libFiltered() {
+  let rows = [];
+  if (libTab === 'face' && LIB.face) for (const x of LIB.face.items) rows.push([x, 'face']);
+  if (libTab === 'ppe' && LIB.ppe) for (const x of LIB.ppe.items) rows.push([x, 'ppe']);
+  if (libFilterLib) rows = rows.filter(([x, k]) =>
+    x.lib_id === libFilterLib && (!libFilterKind || libFilterKind === k));
+  if (libQ) { const q = norm(libQ); rows = rows.filter(([x]) => norm(libName(x)).includes(q)); }
+  return rows;
+}
+
+function paintLibrary() {
+  const grid = $('#libGrid'), empty = $('#libEmpty');
+  const rows = libFiltered();
+  $('#libCount').textContent = LIB.busy ? 'đang đọc từ box…'
+    : LIB.err ? '—'
+    : (LIB.face && LIB.ppe) ? rows.length + ' mục' : '—';
+  if (LIB.err) {
+    grid.innerHTML = ''; empty.hidden = false;
+    $('#libEmptyT1').textContent = 'Không đọc được';
+    $('#libEmptyT2').textContent = LIB.err;
+    return;
+  }
+  if (LIB.busy && !rows.length) {
+    empty.hidden = true;
+    grid.innerHTML = '<div class="al-load">Đang đọc thư viện từ box…</div>';
+    return;
+  }
+  const pages = Math.max(1, Math.ceil(rows.length / LIB_PAGE));
+  libPage = Math.min(libPage, pages - 1);
+  const shown = rows.slice(libPage * LIB_PAGE, (libPage + 1) * LIB_PAGE);
+  empty.hidden = rows.length > 0;
+  if (!rows.length) {
+    $('#libEmptyT1').textContent = 'Thư viện trống';
+    $('#libEmptyT2').textContent = 'Chưa có khuôn nào trong thư viện trên box';
+  }
+  grid.replaceChildren(...shown.map(([x, k]) => libCard(x, k)));
+  const pg = $('#libPager'); pg.hidden = pages <= 1;
+  $('#libPgInfo').textContent = rows.length
+    ? 'Trang ' + (libPage + 1) + '/' + pages + ' · ' + rows.length + ' mục' : '';
+  $('#libPgPrev').classList.toggle('dis', libPage === 0);
+  $('#libPgNext').classList.toggle('dis', libPage >= pages - 1);
+}
+
+/* ---------------- thanh loc: dropdown thu vien + o tim ---------------- */
+
+// Không còn mục "Tất cả thư viện": luôn hiển thị theo một thư viện cụ thể.
+// Mặc định vào thư viện đầu tiên (Default List) của loại đang xem. Chạy một lần
+// sau load / đổi tab, KHÔNG chạy trong paintLibrary để tránh tác dụng phụ.
+function applyDefaultLib() {
+  const libs = (libTab === 'face' ? LIB.face : LIB.ppe)?.libs;
+  if (libs && libs.length) { libFilterLib = libs[0].lib_id; libFilterKind = libTab; }
+}
+
+function libCurrentKind() {
+  if (libFilterKind) return libFilterKind;
+  if (libFilterLib) {
+    // lib_id co the trung giua 2 loai -> uu tien loai co thu vien do.
+    if (LIB.face?.libs.some(l => l.lib_id === libFilterLib)) return 'face';
+    if (LIB.ppe?.libs.some(l => l.lib_id === libFilterLib)) return 'ppe';
+  }
+  return libTab;
+}
+
+function paintLibLibMenu() {
+  const kind = libCurrentKind();
+  const libs = (kind === 'face' ? LIB.face : LIB.ppe)?.libs || [];
+  const list = $('#libLibList');
+  const mk = (lbl, onclick, noActs) => {
+    const b = document.createElement('div');
+    b.className = 'mrow';
+    b.innerHTML = '<span class="dot"></span><span class="l"></span><span class="k"></span>' +
+      '<span class="mi act"></span><span class="mi del"></span>';
+    if (noActs) { b.querySelector('.act').remove(); b.querySelector('.del').remove(); }
+    b.querySelector('.l').textContent = lbl;
+    b.onclick = () => { $('#libLibMenu').hidden = true; onclick(); paintLibLibMenu(); };
+    const act = b.querySelector('.act');
+    if (act) act.onclick = e => { e.stopPropagation(); $('#libLibMenu').hidden = true;
+      const lb = libs.find(l => l.lib_name === lbl); if (lb) openLibNew(kind, lb.lib_id, lb.lib_name); };
+    const del = b.querySelector('.del');
+    if (del) del.onclick = e => { e.stopPropagation(); $('#libLibMenu').hidden = true;
+      const lb = libs.find(l => l.lib_name === lbl); if (lb) delLib(kind, lb); };
+    return b;
+  };
+  list.replaceChildren();
+  for (const lb of libs) {
+    const b = mk(lb.lib_name, () => { libFilterLib = lb.lib_id; libFilterKind = kind; libPage = 0; paintLibrary(); });
+    b.classList.toggle('on', libFilterLib === lb.lib_id && libFilterKind === kind);
+    b.querySelector('.dot').style.background = libFilterLib === lb.lib_id && libFilterKind === kind ? 'var(--gold)' : 'rgba(255,255,255,.18)';
+    b.querySelector('.act').title = 'Đổi tên';
+    b.querySelector('.del').title = 'Xóa thư viện';
+    list.append(b);
+  }
+  const sep = document.createElement('div'); sep.className = 'msep';
+  list.append(sep, mk('+ Tạo thư viện mới', () => openLibNew(libCurrentKind(), null, ''), true));
+  $('#libLibLbl').textContent = libFilterLib && libFilterKind === kind
+    ? (libs.find(l => l.lib_id === libFilterLib)?.lib_name || 'Thư viện')
+    : (kind === 'ppe' ? 'Đồng phục' : 'Nhân sự');
+}
+
+/* ---------------- tao / doi ten / xoa thu vien ---------------- */
+// LN.id null = tao, so = doi ten thu vien do cua LN.kind.
+const LN = {id: null, kind: 'face', busy: false};
+
+function openLibNew(kind, id, name) {
+  LN.id = id; LN.kind = kind;
+  $('#libNewTitle').textContent = id ? 'Đổi tên thư viện' : 'Tạo thư viện';
+  $('#libNewKind').hidden = !!id;              // khong doi loai khi dang doi ten
+  $$('#libNewKind button').forEach(b => b.classList.toggle('on', b.dataset.k === kind));
+  $('#libNewName').value = name || '';
+  $('#libNewHint').textContent = id ? 'Tên mới tối đa 64 ký tự' : 'Tối đa 64 ký tự · trùng tên box báo lỗi 400938';
+  $('#libNewOk').textContent = id ? 'Lưu' : 'Tạo';
+  $('#libNewWrap').hidden = false;
+  $('#libNewName').focus();
+}
+
+async function saveLib() {
+  if (LN.busy) return;
+  const name = $('#libNewName').value.trim();
+  if (!name) { toast({kind: 'warn', sev: 'CẦN TÊN', title: 'Nhập tên thư viện'}); return; }
+  const kind = $$('#libNewKind button.on')[0].dataset.k;
+  const pre = kind === 'face' ? 'personlib' : 'workclotheslib';
+  LN.busy = true;
+  try {
+    const body = {lib_name: name};
+    if (LN.id) body.lib_id = LN.id;
+    const r = await cnPost('aibox/' + pre + (LN.id ? '/update' : '/add'), body);
+    if (r.code !== 0) throw new Error(r.msg || 'code ' + r.code);
+    $('#libNewWrap').hidden = true;
+    toast({kind: 'ok', sev: LN.id ? 'ĐÃ ĐỔI TÊN' : 'ĐÃ TẠO',
+           title: LN.id ? 'Đã đổi tên thư viện' : 'Đã tạo thư viện ' + name});
+    loadLibrary(true);
+  } catch (e) {
+    toast({kind: 'warn', sev: 'LỖI', title: 'Không ' + (LN.id ? 'đổi tên' : 'tạo') + ' thư viện',
+           sub: e.message});
+  } finally { LN.busy = false; }
+}
+
+async function delLib(kind, lb) {
+  if (!(await confirmBox({
+    title: 'Xóa thư viện', yes: 'Xóa',
+    msg: 'Xóa thư viện "' + lb.lib_name + '"? Mọi mục bên trong cũng bị xóa.',
+    sub: 'Hành động này không thể hoàn tác.',
+  }))) return;
+  const pre = kind === 'face' ? 'personlib' : 'workclotheslib';
+  // personlib/delete nhan ARRAY, workclotheslib/delete nhan SCALAR.
+  const body = kind === 'face' ? {lib_id: [lb.lib_id]} : {lib_id: lb.lib_id};
+  try {
+    const r = await cnPost('aibox/' + pre + '/delete', body);
+    if (r.code !== 0) throw new Error(r.msg || 'code ' + r.code);
+    if (libFilterLib === lb.lib_id && libFilterKind === kind) { libFilterLib = null; libFilterKind = null; }
+    toast({kind: 'ok', sev: 'ĐÃ XÓA', title: 'Đã xóa thư viện ' + lb.lib_name});
+    loadLibrary(true);
+  } catch (e) {
+    toast({kind: 'warn', sev: 'LỖI', title: 'Không xóa được thư viện', sub: e.message});
+  }
+}
+
+/* ---------------- them mục ---------------- */
+
+const LI = {kind: 'face', file: [], busy: false, thumbs: []};
+
+function paintLi() {
+  const isFace = LI.kind === 'face';
+  $('#liSub').textContent = isFace
+    ? 'POST /api/v2/person/add · ảnh base64 trong JSON'
+    : 'POST /api/v2/workclothes/batchadd · tối đa 5 ảnh jpg';
+  $('#liNameF').hidden = !isFace;               // workclothes khong co ten
+  $('#liFaceF').hidden = !isFace;
+  $('#liFileHint').textContent = isFace ? 'JPG/PNG · ≤5MB mỗi ảnh' : 'Chỉ JPG · ≤5MB · tối đa 5 ảnh';
+  $('#liFile').accept = isFace ? 'image/jpeg,image/png' : 'image/jpeg';
+  $('#liPrev').replaceChildren(...LI.thumbs.map(t => {
+    const im = document.createElement('img');
+    im.src = t;
+    im.onclick = () => { LI.file = LI.file.filter(f => f !== t); paintLi(); };
+    return im;
+  }));
+  $('#liMsg').textContent = LI.busy ? 'Đang gửi lên box…' : '';
+}
+
+function openAddItem() {
+  LI.kind = libCurrentKind();
+  const libs = (LI.kind === 'face' ? LIB.face : LIB.ppe)?.libs || [];
+  const sel = $('#liLib');
+  sel.replaceChildren(...libs.map(l => {
+    const o = document.createElement('option');
+    o.value = l.lib_id; o.textContent = l.lib_name;
+    return o;
+  }));
+  const cur = libs.find(l => l.lib_id === libFilterLib && libFilterKind === LI.kind);
+  if (cur) sel.value = cur.lib_id;
+  LI.file = []; LI.thumbs = [];
+  $('#liName').value = ''; $('#liIdNo').value = ''; $('#liTel').value = '';
+  $('#liSex').value = '99';
+  paintLi();
+  $('#liWrap').hidden = false;
+  $('#liName').focus();
+}
+
+// Doc moi File thanh base64 (bo prefix data-URI) — dung FileReader, nhu vendor lam.
+const fileToB64 = f => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(String(r.result).split(',')[1]);
+  r.onerror = rej;
+  r.readAsDataURL(f);
+});
+
+async function saveAddItem() {
+  if (LI.busy) return;
+  const isFace = LI.kind === 'face';
+  if (LI.file.length === 0) { toast({kind: 'warn', sev: 'CẦN ẢNH', title: 'Chọn ít nhất một ảnh'}); return; }
+  if (isFace && !$('#liName').value.trim()) { toast({kind: 'warn', sev: 'CẦN TÊN', title: 'Nhập tên nhân sự'}); return; }
+  const lib_id = +$('#liLib').value;
+  let b64;
+  try { b64 = await Promise.all(LI.file.map(fileToB64)); }
+  catch { toast({kind: 'warn', sev: 'LỖI ẢNH', title: 'Không đọc được ảnh'}); return; }
+  LI.busy = true; paintLi();
+  try {
+    let body;
+    if (isFace) {
+      body = {
+        person_name: $('#liName').value.trim(),
+        image_base64: b64[0],
+        sex: +$('#liSex').value,
+        email: '', tel: $('#liTel').value.trim(),
+        certificate_type: 1, certificate_no: $('#liIdNo').value.trim(),
+        birth_date: '', lib_id,
+      };
+    } else {
+      body = {lib_id, image_base64: b64};
+    }
+    const r = await cnPost('aibox/' + (isFace ? 'person/add' : 'workclothes/batchadd'), body);
+    if (r.code !== 0) throw new Error(r.msg || 'code ' + r.code);
+    $('#liWrap').hidden = true;
+    toast({kind: 'ok', sev: 'ĐÃ THÊM', title: 'Đã thêm mục vào thư viện'});
+    loadLibrary(true);
+  } catch (e) {
+    toast({kind: 'warn', sev: 'LỖI', title: 'Không thêm được mục', sub: e.message});
+  } finally { LI.busy = false; }
+}
+
+/* ---------------- chi tiet + xoa mục ---------------- */
+
+const LD = {x: null, kind: 'face'};
+
+function openLibDetail(x, kind) {
+  LD.x = x; LD.kind = kind;
+  $('#ldTitle').textContent = libName(x);
+  $('#ldSub').textContent = (kind === 'face' ? 'Nhân sự' : 'Đồng phục')
+    + ' · ' + x.lib_name + ' · ' + libDate(x.create_time || 0);
+  const img = $('#ldImg');
+  const url = libImg(x.image_path);
+  img.style.backgroundImage = url ? 'url(' + JSON.stringify(url) + ')' : '';
+  img.innerHTML = url ? '' : '<span class="msg">Không có ảnh</span>';
+  const rows = [];
+  if (kind === 'face') {
+    rows.push(
+      row('Tên', escHTML(x.person_name) || '—'),
+      row('Mã', escHTML('#' + x.person_id), 'dim'),
+      row('Giới tính', x.sex == null || x.sex === 99 ? '—' : (x.sex === 1 ? 'Nam' : 'Nữ')),
+      row('Điện thoại', escHTML(x.tel) || '—'),
+      row('Email', escHTML(x.email) || '—'),
+      row('Số giấy tờ', escHTML(x.certificate_no) || '—'),
+    );
+  } else {
+    rows.push(
+      row('Thư viện', escHTML(x.lib_name) || '—'),
+      row('Mã', escHTML('#' + x.workclothes_id), 'dim'),
+      row('Ngày thêm', escHTML(libDate(x.create_time)) || '—'),
+    );
+  }
+  const st = libModel(x.modeling_type);
+  if (st) rows.push(row('Trạng thái', st, ''));
+  $('#ldFields').innerHTML = rows.join('');
+  $('#ldWrap').hidden = false;
+}
+
+async function delLibItem() {
+  const x = LD.x;
+  if (!x || !(await confirmBox({
+    title: 'Xóa mục', yes: 'Xóa',
+    msg: 'Xóa "' + libName(x) + '" khỏi thư viện ' + x.lib_name + '?',
+    sub: 'Hành động này không thể hoàn tác.',
+  }))) return;
+  const isFace = LD.kind === 'face';
+  const body = isFace ? {person_id_list: [x.person_id]} : {lib_id: x.lib_id, workclothes_id_list: [x.workclothes_id]};
+  try {
+    const r = await cnPost('aibox/' + (isFace ? 'person/delete' : 'workclothes/delete'), body);
+    if (r.code !== 0) throw new Error(r.msg || 'code ' + r.code);
+    $('#ldWrap').hidden = true;
+    toast({kind: 'ok', sev: 'ĐÃ XÓA', title: 'Đã xóa mục ' + libName(x)});
+    loadLibrary(true);
+  } catch (e) {
+    toast({kind: 'warn', sev: 'LỖI', title: 'Không xóa được mục', sub: e.message});
+  }
+}
+
+/* ================= VI / EN =================
+   Đúng phạm vi I18N của design gốc: bản .dc.html cũng chỉ dịch nhãn dock + tiêu
+   đề view + vài nhãn tĩnh, còn mọi chuỗi động trong ui.js/ai.js vẫn tiếng Việt. */
+const I18N = {
+  vi: {tLive:'Camera trực tiếp', tLog:'Nhật ký sự kiện AI', tLib:'Thư viện nhận diện',
+       tCams:'Danh sách camera', tCfg:'Cấu hình hệ thống', tAI:'Cấu hình AI',
+       allCams:'Tất cả camera', reload:'Tải lại luồng', refresh:'Làm mới',
+       dock0:'Live', dock1:'Nhật ký', dock2:'Thư viện', dock3:'Camera', dock4:'Cấu hình',
+       langTitle:'Đổi ngôn ngữ', libFace:'Nhân sự', libPpe:'Đồng phục'},
+  en: {tLive:'Live cameras', tLog:'AI event log', tLib:'Recognition library',
+       tCams:'Camera list', tCfg:'System settings', tAI:'AI configuration',
+       allCams:'All cameras', reload:'Reload stream', refresh:'Refresh',
+       dock0:'Live', dock1:'Logs', dock2:'Library', dock3:'Cameras', dock4:'Settings',
+       langTitle:'Switch language', libFace:'Staff', libPpe:'Uniforms'},
+};
+let LANG = 'vi';
+try { LANG = localStorage.getItem('vb-lang') === 'en' ? 'en' : 'vi'; } catch { /* private mode */ }
+function applyI18n() {
+  const t = I18N[LANG] || I18N.vi;
+  $$('[data-i18n]').forEach(el => { const v = t[el.dataset.i18n]; if (v) el.textContent = v; });
+  $$('[data-i18n-title]').forEach(el => { const v = t[el.dataset.i18nTitle]; if (v) el.title = v; });
+  const ls = $('#langSwitch');
+  if (ls) ls.dataset.lang = LANG;
+  document.documentElement.lang = LANG;
+}
+
+/* ================= vong lap + khoi dong ================= */
+
+$('#camReload').onclick = loadCams;
+$('#libRefresh').onclick = () => loadLibrary(true);
+// Làm mới cũng phải dựng lại menu thư viện (mới tạo/xóa -> danh sách lib đổi).
+loadLibrary = ((f) => async function (force) { const r = await f(force); paintLibLibMenu(); return r; })(loadLibrary);
+$$('#libTabs button').forEach(b => b.onclick = () => {
+  libTab = b.dataset.lib; libFilterLib = null; libFilterKind = null; libPage = 0;
+  applyDefaultLib();
+  $$('#libTabs button').forEach(x => x.classList.toggle('on', x === b));
+  paintLibLibMenu(); paintLibrary();
+});
+$('#libQ').oninput = e => { libQ = e.target.value.trim(); libPage = 0; paintLibrary(); };
+$('#libPgPrev').onclick = () => { if (libPage > 0) { libPage--; paintLibrary(); } };
+$('#libPgNext').onclick = () => { const rows = libFiltered();
+  if (libPage < Math.ceil(rows.length / LIB_PAGE) - 1) { libPage++; paintLibrary(); } };
+$('#libLibBtn').onclick = e => { e.stopPropagation(); paintLibLibMenu();
+  const m = $('#libLibMenu'); m.hidden = !m.hidden;
+  $('#libLibBtn').setAttribute('aria-expanded', String(!m.hidden)); };
+$('#libAdd').onclick = () => openAddItem();
+// Nút "Thêm mục" trong mọi modal phải focus về đúng tab, và Enter trong ô tên cũng gửi.
+$('#libNewOk').onclick = saveLib; $('#libNewNo').onclick = () => $('#libNewWrap').hidden = true;
+$('#libNewX').onclick = () => $('#libNewWrap').hidden = true;
+$('#libNewWrap').onclick = e => { if (e.target === $('#libNewWrap')) $('#libNewWrap').hidden = true; };
+$('#libNewName').addEventListener('keydown', e => { if (e.key === 'Enter') saveLib(); });
+$$('#libNewKind button').forEach(b => b.onclick = () => {
+  $$('#libNewKind button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('#liOk').onclick = saveAddItem; $('#liNo').onclick = () => $('#liWrap').hidden = true;
+$('#liX').onclick = () => $('#liWrap').hidden = true;
+$('#liWrap').onclick = e => { if (e.target === $('#liWrap')) $('#liWrap').hidden = true; };
+$$('#liKind button').forEach(b => b.onclick = () => {
+  $$('#liKind button').forEach(x => x.classList.toggle('on', x === b));
+  LI.kind = b.dataset.k; paintLi();
+});
+$('#liFile').onchange = () => {
+  // LI.file giu FILE (de sau FileReader doc thanh base64), thumbs giu blob URL de hien thi.
+  const max = LI.kind === 'face' ? 1 : 5;
+  const files = [...$('#liFile').files].slice(0, max);
+  $('#liFile').value = '';
+  LI.file = []; LI.thumbs = [];
+  files.forEach(f => { LI.file.push(f); LI.thumbs.push(URL.createObjectURL(f)); });
+  paintLi();
+};
+$('#ldNo').onclick = () => $('#ldWrap').hidden = true;
+$('#ldX').onclick = () => $('#ldWrap').hidden = true;
+$('#ldWrap').onclick = e => { if (e.target === $('#ldWrap')) $('#ldWrap').hidden = true; };
+$('#ldDel').onclick = delLibItem;
+// Đóng menu thư viện khi bấm ra ngoài.
+document.addEventListener('click', e => {
+  if (!$('#libLibMenu').hidden && !e.target.closest('#libLibDrop')) $('#libLibMenu').hidden = true;
+});
+// Bấm thumb (không có data-l) = đổi ngôn ngữ; bấm VI/EN = chọn thẳng.
+$('#langSwitch').onclick = e => {
+  const o = e.target.closest && e.target.closest('[data-l]');
+  LANG = o ? (o.dataset.l === 'en' ? 'en' : 'vi') : (LANG === 'vi' ? 'en' : 'vi');
+  try { localStorage.setItem('vb-lang', LANG); } catch { /* private mode */ }
+  applyI18n();
+};
+applyI18n();
+// Roi panel = BO vung dang ve (chua luu) va tra mode ve idle. Khong lam thi lan
+// sau vao lai van con moc cu, va con tro van la dau cong.
+$('#aiBack').onclick = () => { exitDraw(); go('cam'); };
+$('#aiCancel').onclick = () => { exitDraw(); go('cam'); };
+
+// Vao tab nao thi nap tab do — khong poll box lien tuc
+hooks.onView = view => {
+  if (view !== 'ai') exitDraw();          // doi view bang duong nao cung bo vung chua luu
+  // go('live') chạy lúc boot (cuối file) và mỗi lần quay lại tab Live -> đọc cấu hình ở
+  // đây là đủ, không cần timer riêng: bật AreaRuleData trong panel AI rồi về Live là
+  // badge hiện ngay. KHÔNG cho vào tick 1s / refresh 3s — box có giới hạn đăng nhập.
+  if (view === 'live') { loadAreaOn().then(paintAreaBadge); seedCamNames(); paintHistory(); }
+  if (view === 'detail') { paintHistory(); paintDetailAlgos(); }
+  if (view === 'cam') loadCams();
+  if (view === 'cfg') loadAlgos();
+  if (view === 'log') loadLog();              // số thông báo giữ nguyên tới khi "Đã xem"
+  if (view === 'lib') loadLibrary();
+};
+
+setNote((m, s) => toast({sev: s === 'warn' ? 'CHÚ Ý' : 'LỖI', title: m,
+                         kind: s === 'warn' ? 'warn' : 'err'}));
+// ai.js khong import app.js (vong app -> ui -> ai) nen go() phai tiem vao,
+// khong thi openAI() chet o `go('ai')` va panel khong bao gio mo.
+setGo(go);
+initAI();
+
+const tickFps = () => {
+  for (const t of S.tiles.values()) sampleFps(t.player);
+  if (dPlayer) { sampleFps(dPlayer); sampleRtt(dPlayer); }
+  if (S.view === 'detail') paintDetail();
+};
+
+tick();
+setInterval(tick, 1000);
+setInterval(refresh, 3000);
+setInterval(tickFps, 1000);
+setInterval(checkBox, 30000);
+refresh();
+checkBox();
+go('live');
+
+// Nap lich su canh bao: AL bat dau RONG nen tab Nhat ky trong tron cho den khi
+// co canh bao MOI. Ve lai neu dang o tab do luc fetch xong.
+loadAlarmHistory()
+  .then(n => { if (n && S.view === 'log') loadLog();
+               if (n && S.view === 'lib') loadLibrary();
+               paintHistory(); })        // ve ca thanh live (#hist2) lan dau sau khi nap
+  .catch(e => console.warn('khong nap duoc lich su canh bao:', e.message));
+// Seed 'so nguoi trong vung' ngay sau refresh (khong cho box gui event dau tien).
+// Loi khong gay: seedAreaCount nuot moi loi, badge chi hien 0 cho den khi box gui.
+seedAreaCount();

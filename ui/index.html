@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibotics · AI Smart Box</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- media=print + onload: nạp font KHÔNG chặn render. Box camera thường nằm VLAN
+     không có DNS — link chặn render sẽ treo first paint cho tới khi timeout.
+     Không mạng thì rơi về stack Inter/system-ui trong :root, y như trước. -->
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app" style="position:relative;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(140% 120% at 18% -10%, #16181d 0%, #0b0c0f 55%, #08090b 100%)">
+
+  <!-- Liquid aurora backdrop -->
+  <div class="aurora a"></div>
+  <div class="aurora b"></div>
+  <div class="aurora c"></div>
+  <div class="aurora vig"></div>
+
+  <!-- ============================ HEADER ============================ -->
+  <header data-glass style="position:relative;z-index:30;flex:none;display:flex;align-items:center;gap:18px;height:82px;margin:0;padding:0 28px;border-radius:0 0 20px 20px;background:linear-gradient(168deg,rgba(255,255,255,.13),rgba(255,255,255,.05) 48%,rgba(213,194,149,.06));border:1px solid rgba(255,255,255,.15);border-top:none;box-shadow:inset 0 -1px 0 rgba(255,255,255,.05), 0 18px 38px rgba(0,0,0,.5)">
+
+    <div style="display:flex;align-items:center;gap:16px;min-width:0;overflow:hidden">
+      <div class="logo" style="flex:none;width:44px;height:44px"></div>
+      <span class="brand" style="flex:none;white-space:nowrap">Vibotics</span>
+      <span class="brand-sub" style="flex:none;white-space:nowrap">AI Smart Box</span>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <!-- dock: PHẢI là <button> trong <nav> — app.js go() dùng $$('nav button')
+         và toggle .on theo data-go. Nhãn chữ ẩn vĩnh viễn như design gốc
+         (không rule nào nâng opacity lên 1), title thay cho nhãn. -->
+    <nav data-dock style="position:relative;flex:none;display:flex;align-items:center;gap:0;padding:5px;border-radius:26px;transition:border-radius .26s ease;background:linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%);border:1px solid rgba(213,194,149,.34);box-shadow:inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)">
+      <span data-dockrail></span>
+
+      <button data-go="live" data-dockitem class="on" title="Live" data-i18n-title="dock0" style="flex:none">
+        <span data-dock-icon><span data-dockgold></span>
+          <svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4zM10 20v-6h4v6"/></svg>
+        </span>
+        <span data-dock-label data-i18n="dock0">Live</span>
+      </button>
+
+      <button data-go="log" data-dockitem title="Nhật ký" data-i18n-title="dock1" style="flex:none">
+        <span data-dock-icon><span data-dockgold></span>
+          <svg viewBox="0 0 24 24"><path d="M12 7v5l3.5 2M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16"/></svg>
+          <span class="badge" id="navUnread" hidden>0</span>
+        </span>
+        <span data-dock-label data-i18n="dock1">Nhật ký</span>
+      </button>
+
+      <button data-go="lib" data-dockitem title="Thư viện" data-i18n-title="dock2" style="flex:none">
+        <span data-dock-icon><span data-dockgold></span>
+          <svg viewBox="0 0 24 24"><path d="M4 6.5h16v12H4zM4 10.5h16M9 10.5v8"/></svg>
+        </span>
+        <span data-dock-label data-i18n="dock2">Thư viện</span>
+      </button>
+
+      <button data-go="cam" data-dockitem title="Camera" data-i18n-title="dock3" style="flex:none">
+        <span data-dock-icon><span data-dockgold></span>
+          <svg viewBox="0 0 24 24"><path d="M3.5 7.5h11v9h-11zM14.5 11l6-3v8l-6-3"/></svg>
+        </span>
+        <span data-dock-label data-i18n="dock3">Camera</span>
+      </button>
+
+      <button data-go="cfg" data-dockitem title="Cấu hình" data-i18n-title="dock4" style="flex:none">
+        <span data-dock-icon><span data-dockgold></span>
+          <svg viewBox="0 0 24 24"><path d="M12 9.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2M19 12a7 7 0 0 0-.1-1l1.6-1.3-1.7-2.9-1.9.8a7 7 0 0 0-1.7-1L14.8 4H9.2l-.4 2a7 7 0 0 0-1.7 1l-1.9-.8-1.7 2.9L5.1 11a7 7 0 0 0 0 2l-1.6 1.3 1.7 2.9 1.9-.8a7 7 0 0 0 1.7 1l.4 2h5.6l.4-2a7 7 0 0 0 1.7-1l1.9.8 1.7-2.9-1.6-1.3a7 7 0 0 0 .1-1"/></svg>
+        </span>
+        <span data-dock-label data-i18n="dock4">Cấu hình</span>
+      </button>
+    </nav>
+
+    <!-- ngôn ngữ: thumb trượt bằng `translate` (KHÔNG phải transform) để scale khi
+         hover nở quanh tâm của chính nó — dùng transform thì scale áp sau translate
+         và thumb lệch ~3.5px khỏi chữ EN. -->
+    <span data-langswitch data-lang="vi" id="langSwitch" title="Đổi ngôn ngữ" data-i18n-title="langTitle">
+      <span data-langthumb></span>
+      <span data-l="vi">VI</span>
+      <span data-l="en">EN</span>
+    </span>
+
+    <span class="h-vr"></span>
+
+    <div class="hstat">
+      <div class="hstat-r">
+        <div style="flex:none;display:flex;align-items:center;gap:7px">
+          <span id="dGo"></span>
+          <span class="h-online" id="cOnline">—</span>
+        </div>
+        <span class="h-div"></span>
+        <span class="h-clock" id="clock">--:--:--</span>
+      </div>
+      <div style="flex:none;max-width:100%;display:inline-flex;align-items:center;gap:7px;height:22px;min-width:0;overflow:hidden">
+        <span id="dBox"></span>
+        <span class="h-box" id="cBox">AI BOX …</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="body" style="position:relative;z-index:1;flex:1;min-height:0;display:flex">
+    <main style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
+
+      <!-- ============================ LIVE ============================ -->
+      <section class="view" id="v-live">
+        <div class="view-wrap">
+          <div class="live-split">
+            <!-- Rail trai: danh sach camera cuon doc (du 16 the), bam de mo chi tiet -->
+          <div class="bar" style="position:relative;gap:14px;flex-wrap:wrap;margin-bottom:4px">
+            <span class="view-h" data-i18n="tLive">Camera trực tiếp</span>
+            <div class="grow"></div>
+            <div class="tb cam-tb">
+              <span id="pager" hidden style="display:flex;align-items:center;gap:2px">
+                <button id="pgPrev" data-pgctrl data-pg-dir title="Trang trước">‹</button>
+                <span id="pgNums" style="display:flex;align-items:center;gap:2px"></span>
+                <button id="pgNext" data-pgctrl data-pg-dir title="Trang sau">›</button>
+                <span class="tb-div"></span>
+              </span>
+
+              <div class="drop" style="position:relative;flex:none;display:flex">
+                <button data-glassbtn id="layoutBtn" style="height:27px;padding:0 9px;border-radius:10px;font:600 11.5px/1 var(--b)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                  <span id="layoutLabel">3×3</span>
+                </button>
+                <div class="menu" id="layoutMenu" data-glass hidden style="top:calc(100% + 8px);right:0;width:150px;border-radius:16px">
+                  <div id="layoutList"></div>
+                </div>
+              </div>
+
+              <span class="tb-div"></span>
+
+              <div class="drop" style="position:relative;flex:none;display:flex">
+                <button data-goldbtn id="fBtn" style="height:27px;width:27px;padding:0;border-radius:10px;display:inline-flex;align-items:center;justify-content:center">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                </button>
+                <div class="menu" id="fMenu" data-glass hidden style="top:calc(100% + 8px);right:0;width:270px;border-radius:16px">
+                  <div id="fList"></div>
+                </div>
+              </div>
+
+              <span class="tb-div"></span>
+
+              <button data-glassbtn id="camRefresh" title="Làm mới" style="height:27px;width:27px;padding:0;border-radius:10px;display:inline-flex;align-items:center;justify-content:center">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="live-cols">
+            <aside class="cam-rail" data-glass>
+              <div class="rail-h">
+                <span class="hist-t">Danh sách camera</span>
+                <span class="hist-n" id="railN">—</span>
+                <div class="grow"></div>
+              </div>
+              
+                            
+              <div class="rail-list nosb" id="rail"></div>
+            </aside>
+            <div class="live-main">
+
+
+          <!-- Lưới: cột do app.js ghi (gridTemplateColumns), HÀNG do app.js ghi
+               (gridTemplateRows = repeat(cols, 1fr)) để lưới lấp đầy chiều cao
+               viewport — mọi camera hiện trọn trên màn live, không cần cuộn.
+               .tile có min-height:120px làm lưới an toàn — thiếu chiều cao xác định
+               thì IntersectionObserver(threshold .01) của <video-stream> không bao giờ
+               fire và tile trắng không video, không lỗi console. -->
+          <div id="grid" style="flex:1;min-height:0;display:grid;gap:12px"></div>
+
+              <!-- Thanh lich su canh bao toan box (moi camera), ban sao cua detail -->
+              <div class="hist-bar" data-glass style="flex:none;margin-top:8px;border-radius:18px">
+                <div class="hist-h" style="flex-wrap:wrap">
+                  <span class="hist-t">Lịch sử cảnh báo</span>
+                  <span class="hist-n" id="histN2">—</span>
+                  <div class="grow"></div>
+                  <span style="font:400 10px/1 var(--b);color:rgba(229,229,234,.38);white-space:nowrap">cuộn ngang · bấm để xem lại clip</span>
+                </div>
+                <div class="hist-list nosb" id="hist2"></div>
+              </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ DETAIL ============================ -->
+      <section class="view" id="v-detail" hidden>
+        <div class="view-wrap" style="gap:14px">
+          <div class="bar" style="gap:12px;flex-wrap:wrap">
+            <button data-glassbtn id="back" style="height:36px;padding:0 14px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M15 5l-7 7 7 7"/></svg>
+              <span data-i18n="allCams">Tất cả camera</span>
+            </button>
+            <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+              <span class="view-h2" id="dName">—</span>
+              <span class="view-sub" id="dSrc" style="font-size:11px">—</span>
+            </div>
+            <div class="grow"></div>
+            <button data-goldbtn id="dAI" style="height:36px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#2a2410" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 9.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2M19 12a7 7 0 0 0-.1-1l1.6-1.3-1.7-2.9-1.9.8a7 7 0 0 0-1.7-1L14.8 4H9.2l-.4 2a7 7 0 0 0-1.7 1l-1.9-.8-1.7 2.9L5.1 11a7 7 0 0 0 0 2l-1.6 1.3 1.7 2.9 1.9-.8a7 7 0 0 0 1.7 1l.4 2h5.6l.4-2a7 7 0 0 0 1.7-1l1.9.8 1.7-2.9-1.6-1.3a7 7 0 0 0 .1-1"/></svg>
+              <span data-i18n="tAI">Cấu hình AI</span>
+            </button>
+            <button data-glassbtn id="dReload" style="height:36px;padding:0 14px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M20 12a8 8 0 1 1-2.4-5.7M20.5 4v4.2h-4.2"/></svg>
+              <span data-i18n="reload">Tải lại luồng</span>
+            </button>
+          </div>
+
+          <!-- data-split: hàng 1 = camera + sidebar (cao bằng nhau nhờ align-items:stretch),
+               hàng 2 = dải lịch sử cảnh báo full width. -->
+          <div data-split style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 322px;gap:14px;align-items:stretch">
+
+            <div class="stage-wrap" style="min-width:0;display:flex;flex-direction:column;gap:12px;padding:0">
+              <div class="stage" id="stage" data-stage style="position:relative;width:100%;flex:1;min-height:0">
+                <span data-edge="top"></span><span data-edge="right"></span><span data-edge="bottom"></span><span data-edge="left"></span>
+                <!-- scrim NHẸ HƠN design (design dùng .5/.84 trên ảnh tĩnh; trên video
+                     thật thì tối quá không xem được). Đây là lệch có chủ ý duy nhất. -->
+                <div class="s-scrim" style="position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.34) 0%,transparent 22%,transparent 62%,rgba(0,0,0,.55) 100%)"></div>
+                <div class="s-top">
+                  <span class="live" id="dLive"><span class="dot"></span>LIVE</span>
+                  <span class="qual" id="dQual">—</span>
+                </div>
+                <div class="s-bot">
+                  <button id="dPlay" title="Tạm dừng">⏸</button>
+                  <button id="dMute" title="Bật tiếng">🔇</button>
+                  <button id="dFull" title="Toàn màn hình">⛶</button>
+                  <div class="grow"></div>
+                  <span class="qual" id="dUp">—</span>
+                </div>
+              </div>
+            </div>
+
+            <aside style="min-width:0;display:flex;flex-direction:column;gap:12px;padding:0;width:auto;overflow:visible">
+              <!-- design gộp RTSP + phiên xem thành MỘT thẻ 12 dòng; target có 2 id
+                   (#dRows 6 dòng + #dRows2 6 dòng) -> giữ cả 2 trong cùng 1 thẻ kính. -->
+              <div class="card" data-glass style="flex:none;border-radius:18px">
+                <div class="card-h">Luồng RTSP · Phiên xem</div>
+                <div id="dRows"></div>
+                <div id="dRows2"></div>
+              </div>
+              <div class="card" data-glass style="flex:1;min-height:0;border-radius:18px">
+                <div style="display:flex;align-items:center;gap:9px">
+                  <span class="card-h">Thuật toán AI</span>
+                  <div class="grow"></div>
+                </div>
+                <div id="dAlgos" style="flex:1;min-height:0;overflow:auto"></div>
+                <div id="dAiCta" style="margin-top:auto;padding-top:11px;border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:7px;cursor:pointer">
+                  <span style="font:600 11px/1 var(--b);color:#d5c295">Cấu hình vùng &amp; quy tắc</span>
+                  <span style="font:500 11px/1 var(--b);color:#d5c295">→</span>
+                </div>
+              </div>
+            </aside>
+
+            <div class="hist-bar" data-glass style="grid-column:1/-1;border-radius:18px">
+              <div class="hist-h" style="flex-wrap:wrap">
+                <span class="hist-t">Lịch sử cảnh báo</span>
+                <span class="hist-n" id="histN">—</span>
+                <div class="grow"></div>
+                <span style="font:400 10px/1 var(--b);color:rgba(229,229,234,.38);white-space:nowrap">cuộn ngang · bấm để xem lại clip</span>
+                <button data-glassbtn id="histAck" hidden style="height:30px;padding:0 12px;font:600 11px/1 var(--b)">Bỏ qua cảnh báo</button>
+              </div>
+              <div class="hist-list nosb" id="hist"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ NHẬT KÝ ============================ -->
+      <section class="view" id="v-log" hidden>
+        <div class="view-wrap" style="overflow:hidden">
+          <div class="bar" style="position:relative;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+            <span class="view-h" data-i18n="tLog">Nhật ký sự kiện AI</span>
+            <span class="view-sub" id="logSource">GET /api/alarms · SSE /events</span>
+            <div class="grow"></div>
+            <div class="tb" style="gap:2px">
+              <div class="drop" id="logFilterDrop" style="position:relative;flex:none;display:flex">
+                <button data-goldbtn id="logFilter" style="height:36px;padding:0 13px;border-radius:12px">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                  <span id="logFilterLabel">Tất cả</span>
+                </button>
+                <div class="menu" id="logFilterMenu" data-glass hidden style="top:calc(100% + 8px);right:0;min-width:200px;border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.18);box-shadow:0 16px 34px rgba(0,0,0,.5)">
+                  <div id="logFilterList"></div>
+                </div>
+              </div>
+              <span class="tb-div"></span>
+              <button data-glassbtn id="logRefresh" style="height:36px;padding:0 13px;border-radius:12px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+                <span data-i18n="refresh">Làm mới</span>
+              </button>
+              <span class="tb-div"></span>
+              <button data-glassbtn id="logReadAll" title="Đánh dấu tất cả đã xem" style="height:36px;padding:0 13px;border-radius:12px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span>Đã xem</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- ui.js paintAlarms() tự sinh .tl-day + .tl bên trong #logBox -->
+          <div data-glass class="nosb" style="border-radius:20px;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+            <div id="logBox" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ THƯ VIỆN (mới) ============================
+           Design gốc render từ S.uploads (FileReader, chỉ sống trong bộ nhớ — demo).
+           Box KHÔNG có endpoint thư viện nhận diện, nên tab này buộc vào dữ liệu thật
+           đang có: ảnh snapshot cảnh báo trong alarms/ (POST /api/alarms). -->
+      <section class="view" id="v-lib" hidden>
+        <div class="view-wrap">
+          <div class="bar" style="gap:12px;flex-wrap:wrap;margin-bottom:16px">
+            <span class="view-h" data-i18n="tLib">Thư viện nhận diện</span>
+            <span class="view-sub" id="libCount">—</span>
+            <div class="grow"></div>
+            <div class="tb" style="gap:8px">
+              <div data-glass data-seg class="seg" id="libTabs" style="flex:none;padding:4px;border-radius:14px;background:linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%);border:1px solid rgba(213,194,149,.34);box-shadow:inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)">
+                <button data-lib="face" class="on" data-i18n="libFace">Nhân sự</button>
+                <button data-lib="ppe" data-i18n="libPpe">Đồng phục</button>
+              </div>
+              <span class="tb-div"></span>
+              <!-- Dropdown thu vien: loc theo thu vien + doi ten/xoa (nút .mi trong mỗi hàng)
+                   + tao moi o cuoi menu. Lib_id 1 ton tai o CA personlib lan workclotheslib
+                   va la 2 thu vien khac nhau -> menu phai theo kind dang chon. -->
+              <div class="drop" id="libLibDrop" style="position:relative;flex:none;display:flex">
+                <button data-glassbtn id="libLibBtn" style="height:36px;padding:0 13px;border-radius:14px" aria-haspopup="true" aria-expanded="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M4 6.5h16v12H4zM4 10.5h16M9 10.5v8"/></svg>
+                  <span id="libLibLbl">Tất cả thư viện</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;opacity:.55"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="menu" id="libLibMenu" data-glass hidden style="top:calc(100% + 8px);right:0;min-width:264px;border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.18);box-shadow:0 16px 34px rgba(0,0,0,.5)">
+                  <div id="libLibList"></div>
+                </div>
+              </div>
+              <input id="libQ" class="lib-q" type="search" placeholder="Tìm theo tên…" aria-label="Tìm trong thư viện" autocomplete="off">
+              <button data-glassbtn id="libAdd" style="height:36px;padding:0 14px;border-radius:14px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 5v14M5 12h14"/></svg>
+                <span>Thêm mục</span>
+              </button>
+              <span class="tb-div"></span>
+              <button data-glassbtn id="libRefresh" style="height:36px;padding:0 14px;border-radius:14px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+                <span data-i18n="refresh">Làm mới</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="nosb" style="flex:1;min-height:0;overflow:auto">
+            <div class="lib-panel">
+              <div class="lib-empty" id="libEmpty" hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="rgba(229,229,234,.4)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:30px;height:30px"><path d="M4 6.5h16v12H4zM4 10.5h16M9 10.5v8"/></svg>
+                <span class="t1" id="libEmptyT1">Thư viện trống</span>
+                <span class="t2" id="libEmptyT2">Chưa có dữ liệu trong thư viện trên box</span>
+              </div>
+              <div class="lib-grid" id="libGrid"></div>
+            </div>
+          </div>
+
+          <!-- Pager RIENG cua tab nay. KHONG dung #pager/#pgPrev/#pgNext: do la id
+               singleton trong #v-live, noi chung se danh nhau voi luoi camera. -->
+          <div class="pager" id="libPager" hidden style="justify-content:center;padding-top:12px">
+            <div class="mid">
+              <button class="pg" data-pgctrl data-pg-dir id="libPgPrev" title="Trang trước" aria-label="Trang trước">‹</button>
+              <span class="view-sub" id="libPgInfo">—</span>
+              <button class="pg" data-pgctrl data-pg-dir id="libPgNext" title="Trang sau" aria-label="Trang sau">›</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ CAMERA ============================ -->
+      <section class="view" id="v-cam" hidden>
+        <div class="view-wrap">
+          <div class="bar" style="position:relative;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+            <span class="view-h" data-i18n="tCams">Danh sách camera</span>
+            <div class="grow"></div>
+            <div class="tb" style="gap:8px">
+              <div data-glass class="cap" style="border-radius:14px;padding:9px 14px">
+                <span class="cap-k">Công suất còn</span>
+                <span class="cap-v" id="camHr">—</span>
+                <div class="cap-bar"><i id="camHrBar" style="width:0"></i></div>
+              </div>
+              <span class="tb-div"></span>
+              <button data-glassbtn id="discoverBtn" style="height:36px;padding:0 15px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M15 3v4a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V4.5"/><path d="M12 8V4M5 8a7 7 0 1 1-.1 10"/></svg>
+                Quét camera
+              </button>
+              <span class="tb-div"></span>
+              <button data-goldbtn id="addBtn" style="flex:none">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#2a2410" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M12 5v14M5 12h14"/></svg>
+                Thêm camera RTSP
+              </button>
+              <button data-glassbtn id="camReload" style="height:36px;padding:0 15px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+                <span data-i18n="refresh">Làm mới</span>
+              </button>
+            </div>
+            <div id="discoverBox" class="discover-box" hidden></div>
+          </div>
+
+          <div class="nosb" style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column">
+            <div data-glass class="tbl" style="border-radius:20px;flex:none">
+              <div class="thead" data-camhead style="padding:14px 16px">
+                <span>ID</span><span>Tên camera</span><span>Khu vực</span><span>Luồng RTSP</span>
+                <span style="text-align:center">Độ trễ</span><span>Trạng thái</span>
+                <span style="text-align:right">Hành động</span>
+              </div>
+              <div id="camList"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ CẤU HÌNH AI ============================
+           KHÔNG lồng #v-ai vào trong #v-cfg: go('ai') set hidden trên mọi .view,
+           lồng vào thì nó tự ẩn ancestor của chính nó. Hai section anh em, cùng
+           một nút dock 'cfg' sáng lên. -->
+      <section class="view" id="v-ai" hidden>
+        <div class="view-wrap" style="gap:13px">
+          <div class="bar" style="gap:12px;flex-wrap:wrap">
+            <button data-glassbtn id="aiBack" style="height:36px;padding:0 14px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M15 5l-7 7 7 7"/></svg>
+              Danh sách camera
+            </button>
+            <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+              <span class="view-h2"><span data-i18n="tAI">Cấu hình AI</span> · <span id="aiTitle">—</span></span>
+              <span class="view-sub" id="aiStream" style="font-size:11px">—</span>
+            </div>
+            <div class="grow"></div>
+            <div data-glass class="cap" style="border-radius:14px">
+              <span class="hint" id="aiHr"></span>
+            </div>
+            <button data-glassbtn id="aiCancel" style="height:36px;padding:0 15px">Hủy</button>
+            <button data-goldbtn id="aiSave" style="height:36px;padding:0 18px">Lưu cấu hình</button>
+          </div>
+
+          <div class="ai-wrap nosb" style="padding:0;gap:13px">
+            <div data-glass class="fn-tabs" id="aiFns" style="flex:none;border-radius:16px;padding:8px;margin-bottom:0"></div>
+
+            <div data-aicols class="ai-cols" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px">
+              <div class="ai-left">
+                <div data-glass class="ai-tools" style="border-radius:16px;padding:10px;gap:9px">
+                  <!-- lastChild PHẢI là text node: ai.js hint() ghi btn.lastChild.textContent -->
+                  <button data-goldbtn id="aiDraw" style="height:34px;padding:0 14px">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#2a2410" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3M14.5 6.5l3 3"/></svg>Vẽ vùng</button>
+                  <button data-glassbtn id="aiClear" style="height:34px;padding:0 13px">Xóa tất cả vùng</button>
+                  <div class="grow"></div>
+                  <span class="hint" id="aiHint" style="text-align:right">Chọn thuật toán trước khi vẽ vùng</span>
+                </div>
+
+                <!-- #aiShot và #aiCv PHẢI trùng khít hộp render: at() ánh xạ toạ độ
+                     chuột qua getBoundingClientRect của canvas, draw() vẽ ngược lại theo
+                     kích thước bitmap mà ResizeObserver chép từ clientWidth/Height của
+                     #aiShot. Lệch nhau = vùng vẽ nằm sai chỗ. -->
+                <div class="ai-shot" id="aiStage" data-roi data-drawing="off" style="flex:1;min-height:0;aspect-ratio:auto">
+                  <div id="aiShot"></div>
+                  <canvas id="aiCv"></canvas>
+                  <div data-roigrid></div>
+                  <div data-roiscan></div>
+                  <div class="ai-shot-top">
+                    <span class="ai-dot"></span>
+                    <span class="ai-q" id="aiQual">—</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ai-right" style="border-radius:20px">
+                <div class="cfg-tabs" id="aiTabs" style="align-self:flex-start;margin:14px 14px 0;flex-wrap:wrap">
+                  <button data-t="rule" class="on">Quy tắc</button>
+                  <button data-t="sched">Lịch canh phòng</button>
+                  <button data-t="link">Liên kết hành động</button>
+                </div>
+                <div class="cfg-pane nosb" id="aiPane"></div>
+              </div>
+            </div>
+
+            <div data-glass style="flex:none;border-radius:18px;padding:13px 16px">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px;flex-wrap:wrap">
+                <span class="card-h">Vùng phát hiện</span>
+                <div class="grow"></div>
+                <span style="font:400 10px/1 var(--b);color:rgba(229,229,234,.38);white-space:nowrap">bấm vùng để chọn trên ảnh · Sửa / Xóa từng vùng</span>
+              </div>
+              <div class="zone-list" id="aiZones"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ CẤU HÌNH HỆ THỐNG ============================ -->
+      <section class="view" id="v-cfg" hidden>
+        <div class="view-wrap">
+          <div class="bar" style="gap:12px;flex-wrap:wrap;margin-bottom:16px">
+            <span class="view-h" data-i18n="tCfg">Cấu hình hệ thống</span>
+            <span class="al-cnt" id="alCnt">—</span>
+            <div class="grow"></div>
+          </div>
+
+          <div class="nosb" style="flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;display:flex;flex-direction:column">
+            <div class="card" data-glass style="flex:none;border-radius:20px;padding:18px;margin-bottom:14px;overflow:visible">
+              <div class="card-h" style="position:relative;display:flex;align-items:center;gap:10px;margin-bottom:11px">
+                Kết nối AI SmartBox
+                <div class="grow"></div>
+                <span class="cn-state" id="cnState" style="text-transform:none;letter-spacing:0;
+                      max-width:60%">Chưa kiểm tra</span>
+              </div>
+              <!-- 1 hang duy nhat: o dien ngan + 3 nut cung cot (align-items:flex-end de nut
+                   ngang hang voi input, khong ngang voi label). Truoc day la 3 hang. -->
+              <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+                <div class="field" style="flex:1 1 150px;max-width:210px"><label>IP / Hostname</label>
+                  <input id="cnHost" class="mono" placeholder="192.168.21.93" autocomplete="off"></div>
+                <div class="field" style="flex:0 0 84px"><label>Cổng</label>
+                  <input id="cnPort" class="mono" type="number" min="1" max="65535" value="80"></div>
+                <div class="field" style="flex:0 1 130px"><label>Tài khoản</label>
+                  <input id="cnUser" class="mono" placeholder="admin" autocomplete="off"></div>
+                <div class="field" style="flex:0 1 150px"><label>Mật khẩu</label>
+                  <input id="cnPass" class="mono" type="password" placeholder="••••••" autocomplete="new-password"
+                         title="Bỏ trống = giữ mật khẩu đang dùng. Mật khẩu lưu plaintext trong aibox.conf.json — đừng commit file này."></div>
+                <div class="field" style="flex:0 0 130px"><label>Đăng ký alarm</label>
+                  <div class="dk-wrap" style="position:relative">
+                    <button data-glassbtn type="button" id="dkSlotBtn" style="width:100%;height:43px;justify-content:space-between;gap:0;padding:0 12px;border-radius:12px;font:400 12.5px/1 var(--m);color:#f5f5f7" aria-haspopup="listbox" aria-expanded="false">
+                      <span id="dkSlotLbl">Platform 1</span>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px;opacity:.55;flex:none"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                  </div></div>
+                <div class="grow"></div>
+                <button data-glassbtn id="cnTest" style="height:38px">Kiểm tra kết nối</button>
+                <button data-glassbtn id="cnSync" style="height:38px">Đồng bộ camera</button>
+                <button data-goldbtn id="cnSave" style="height:38px;padding:0 18px">Lưu</button>
+              </div>
+            </div>
+
+            <div class="card" data-glass style="position:relative;overflow:visible;flex:none;border-radius:20px;padding:18px;margin-bottom:14px">
+              <div class="card-h" style="margin-bottom:14px">Telegram — đẩy cảnh báo vào nhóm</div>
+              <!-- Chip "Đã bật / Chưa cấu hình" là TrẠNG THÁI DUY NHẤT còn lại trên card:
+                   nó nói có token trong config mà không chiếm dòng riêng. -->
+              <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+                <div class="field" style="flex:1 1 240px;max-width:420px">
+                  <label>Bot Token</label>
+                  <input id="tgToken" class="mono" type="password" placeholder="123456:ABC-DEF..." autocomplete="off">
+                </div>
+                <button data-glassbtn id="tgRefresh" style="height:38px;padding:0 14px;border-radius:12px;flex:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+                  Quét nhóm
+                </button>
+                <div class="grow"></div>
+                <span class="tg-chip" id="tgState">Chưa cấu hình</span>
+              </div>
+            </div>
+
+            <div data-glass class="nosb" style="flex:none;border-radius:20px;display:flex;flex-direction:column">
+              <div data-glass style="position:sticky;top:0;z-index:2;flex:none;display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.1);flex-wrap:wrap;background:linear-gradient(168deg,rgba(18,20,24,.86),rgba(18,20,24,.68));backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)">
+                <span class="card-h" style="white-space:nowrap">Thuật toán đang nạp</span>
+                <div style="flex:1;min-width:80px;height:5px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden">
+                  <i id="alBar" style="display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#cdb98a,#e6dbba);transition:width .3s ease"></i>
+                </div>
+                <span class="al-cnt" id="alCnt2" style="white-space:nowrap">—</span>
+              </div>
+
+              <div class="al-thead" data-camhead style="display:flex;align-items:center;gap:12px;padding:10px 18px;border:none;border-radius:0;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);margin-bottom:0">
+                <span style="flex:none;width:200px">Danh mục</span>
+                <span style="flex:none;width:1px;height:12px;background:rgba(255,255,255,.09)"></span>
+                <span>Thuật toán</span>
+              </div>
+
+              <div id="alCats" style="border:none;border-radius:0"></div>
+
+              <div data-glass class="al-foot" style="position:sticky;bottom:0;flex:none;z-index:2;padding:13px 18px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.1);border-radius:0;background:linear-gradient(168deg,rgba(18,20,24,.86),rgba(18,20,24,.68));backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)">
+                <span class="hint" id="alHint">Box giới hạn 20 thuật toán nạp cùng lúc</span>
+                <div class="grow"></div>
+                <span class="cn-state" id="alState"></span>
+                <button data-glassbtn id="alWeb" style="height:38px">Đổi trên web box ↗</button>
+                <button data-goldbtn id="alSave" style="height:38px;padding:0 18px">Nạp thuật toán</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ==================== MODAL · THÊM CAMERA RTSP ==================== -->
+  <div class="overlay" data-overlay id="modal" hidden>
+    <div class="modal" data-modal data-glass style="width:min(900px,100%)" onclick="event.stopPropagation()">
+      <div class="m-head">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+          <span class="m-title">Thêm camera vào box</span>
+          <span class="view-sub">POST /api/channel/add · type=2 rtsp · go2rtc đồng bộ theo</span>
+        </div>
+        <button class="m-x" data-mx id="mClose">✕</button>
+      </div>
+      <div class="m-body nosb">
+        <div class="m-col">
+          <div class="field"><label>URL RTSP</label>
+            <input id="mUrl" class="mono" placeholder="rtsp://admin:pass@192.168.21.178:554/ch01">
+            <span class="hint">Bridge tự escape '%' thành %25 trước khi gửi box (box
+              percent-decode, raw '%' bị từ chối) · riêng go2rtc cũng cần %25.</span></div>
+          <div class="field"><label>Tên camera</label>
+            <input id="mName" placeholder="cam01" maxlength="64" required>
+            <span class="hint">Thành <code>channel_name</code> trên box: tối đa 64 ký tự,
+              không trùng · tên luồng go2rtc box tự đặt là <code>ch&lt;id&gt;</code></span></div>
+          <div class="field"><label>Media</label>
+            <div data-seg class="seg" id="mMedia" style="align-self:flex-start">
+              <button data-media="" class="on">Video + âm thanh</button>
+              <button data-media="video">Chỉ video</button>
+            </div>
+            <span class="hint">Chỉ video: bỏ track audio ở luồng go2rtc (box vẫn nhận đủ)</span></div>
+        </div>
+        <div class="m-col">
+          <div class="preview" data-roi data-drawing="off" id="mPrev" style="aspect-ratio:16/9"><span class="msg" id="mPrevMsg">Chưa kiểm tra</span></div>
+          <div class="card" data-glass style="border-radius:16px"><div class="card-h">Kết quả kiểm tra</div><div id="mRows"></div></div>
+          <button data-glassbtn id="mTest" style="height:38px;justify-content:center">Kiểm tra kết nối</button>
+        </div>
+      </div>
+      <div class="m-foot">
+        <span class="hint" id="mHint">Camera mới hiện ngay trong lưới Live</span>
+        <div class="grow"></div>
+        <button data-glassbtn id="mCancel" style="height:36px;padding:0 16px">Hủy</button>
+        <button data-goldbtn id="mAdd" style="height:36px;padding:0 18px">Thêm vào box</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL · XÁC NHẬN (dùng chung) ==================== -->
+  <div class="overlay" data-overlay id="cfWrap" hidden>
+    <div class="modal" data-modal data-glass style="width:min(440px,100%);border-radius:22px" onclick="event.stopPropagation()">
+      <div class="m-head" style="border-bottom:none;align-items:center;padding:17px 18px 0">
+        <span style="flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:linear-gradient(180deg,rgba(255,88,78,.34),rgba(214,44,34,.16));border:1px solid rgba(255,69,58,.42);box-shadow:0 0 20px rgba(255,69,58,.24)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ff8a84" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M5 7h14M9.5 7V4.4h5V7M7 7l1 13h8l1-13"/></svg>
+        </span>
+        <span class="m-title" id="cfTitle" style="flex:1;min-width:0">Xác nhận</span>
+        <button class="m-x" data-mx id="cfX">✕</button>
+      </div>
+      <div style="padding:13px 18px 4px;display:flex;flex-direction:column;gap:7px">
+        <span id="cfMsg" style="font:500 12.5px/1.55 var(--b);color:rgba(245,245,247,.86)"></span>
+        <span id="cfSub" class="hint"></span>
+      </div>
+      <div class="m-foot" style="border-top:none;justify-content:flex-end;padding:16px 18px 18px">
+        <button data-glassbtn id="cfNo" style="height:36px;padding:0 16px">Hủy</button>
+        <button data-redbtn id="cfYes" style="height:36px;padding:0 18px">Xóa</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL · SỬA CAMERA TRÊN BOX ==================== -->
+  <div class="overlay" data-overlay id="editModal" hidden>
+    <div class="modal" data-modal data-glass style="width:min(620px,100%)" onclick="event.stopPropagation()">
+      <div class="m-head">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+          <span class="m-title">Sửa camera · <span id="eTitle">—</span></span>
+          <span class="view-sub">POST /api/channel/update · type=2 rtsp · password để trống = giữ nguyên</span>
+        </div>
+        <button class="m-x" data-mx id="eClose">✕</button>
+      </div>
+      <div class="m-body nosb">
+        <div class="m-col">
+          <div class="field"><label>Channel Name</label>
+            <input id="eName" maxlength="64" required>
+            <span class="hint">Tối đa 64 ký tự</span></div>
+          <div class="field"><label>RTSP URL</label>
+            <input id="eRtsp" class="mono" spellcheck="false">
+            <span class="hint">Sửa <b>host:port/path</b> tại đây; user:pass nằm ở 2 ô dưới</span></div>
+          <div class="field"><label>Transport Protocol</label>
+            <div data-seg class="seg" id="eTransport" style="align-self:flex-start">
+              <button data-t="1" class="on">TCP</button>
+              <button data-t="2">UDP</button>
+            </div></div>
+        </div>
+        <div class="m-col">
+          <div class="field"><label>Username</label>
+            <input id="eUser" placeholder="admin"></div>
+          <div class="field"><label>Password</label>
+            <input id="ePass" type="password" placeholder="để trống = giữ nguyên">
+            <span class="hint">Không hiện mật khẩu cũ; nhập mật khẩu mới thì thay thế</span></div>
+          <div class="field"><label>Custom ID</label>
+            <input id="eCustom" maxlength="64" placeholder="tùy chọn">
+            <span class="hint">Mã tùy chỉnh (custom_code) trên box</span></div>
+        </div>
+      </div>
+      <div class="m-foot">
+        <span class="hint" id="eHint"></span>
+        <div class="grow"></div>
+        <button data-glassbtn id="eCancel" style="height:36px;padding:0 16px">Hủy</button>
+        <button data-goldbtn id="eSave" style="height:36px;padding:0 18px">Lưu thay đổi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL · NẠP THUẬT TOÁN CHO CAMERA ==================== -->
+  <div class="overlay" data-overlay id="fpWrap" hidden>
+    <div class="modal" data-modal data-glass style="width:min(780px,100%)" onclick="event.stopPropagation()">
+      <div class="m-head">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+          <span class="m-title">Nạp thuật toán · <span id="fpCam">—</span></span>
+          <span class="view-sub">Chỉ hiện thuật toán box đã nạp sẵn · algo/list/current</span>
+        </div>
+        <button class="m-x" data-mx id="fpX">✕</button>
+      </div>
+
+      <div class="fp-cap">
+        <span class="fp-cap-k">Công suất còn</span>
+        <span class="fp-cap-v" id="fpHr">—</span>
+        <div class="fp-bar"><i id="fpBar"></i></div>
+        <div class="grow"></div>
+        <span class="hint" id="fpCnt">—</span>
+      </div>
+
+      <div class="fp-body nosb" id="fpGrid"></div>
+
+      <div class="m-foot">
+        <span class="hint" id="fpHint">Bỏ tích để xóa thuật toán khỏi camera này</span>
+        <div class="grow"></div>
+        <button data-glassbtn id="fpNo" style="height:36px;padding:0 16px">Hủy</button>
+        <button data-goldbtn id="fpSave" style="height:36px;padding:0 18px">Nạp thuật toán</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL · TẠO / ĐỔI TÊN THƯ VIỆN ====================
+       Dung chung 1 modal cho ca tao va doi ten: LN.id null = tao, co id = doi ten.
+       Khi doi ten thi an seg chon loai (khong the doi personlib thanh workclotheslib). -->
+  <div class="overlay" data-overlay id="libNewWrap" hidden>
+    <div class="modal" data-modal data-glass style="width:min(430px,100%);border-radius:22px" onclick="event.stopPropagation()">
+      <div class="m-head" style="border-bottom:none;padding:17px 18px 0">
+        <span class="m-title" id="libNewTitle" style="flex:1;min-width:0">Tạo thư viện</span>
+        <button class="m-x" data-mx id="libNewX" aria-label="Đóng">✕</button>
+      </div>
+      <div style="padding:13px 18px 4px;display:flex;flex-direction:column;gap:12px">
+        <div data-seg class="seg" id="libNewKind" style="align-self:flex-start">
+          <button data-k="face" class="on">Nhân sự</button>
+          <button data-k="ppe">Đồng phục</button>
+        </div>
+        <div class="field"><label for="libNewName">Tên thư viện</label>
+          <input id="libNewName" maxlength="64" autocomplete="off" placeholder="VD: Đồng phục xưởng A">
+          <span class="hint" id="libNewHint">Tối đa 64 ký tự · trùng tên box báo lỗi 400938</span></div>
+      </div>
+      <div class="m-foot" style="border-top:none;justify-content:flex-end;padding:16px 18px 18px">
+        <button data-glassbtn id="libNewNo" style="height:36px;padding:0 16px">Hủy</button>
+        <button data-goldbtn id="libNewOk" style="height:36px;padding:0 18px">Tạo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL · THÊM MỤC VÀO THƯ VIỆN ====================
+       Anh gui len box dang BASE64 THÔ trong JSON (khong phai multipart): da cat
+       prefix "data:image/...;base64,". Do la cach vendor lam va la cach DUY NHAT
+       di qua duoc proxy /aibox/ (proxy chi nhan JSON). -->
+  <div class="overlay" data-overlay id="liWrap" hidden>
+    <div class="modal" data-modal data-glass style="width:min(560px,100%)" onclick="event.stopPropagation()">
+      <div class="m-head">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+          <span class="m-title">Thêm mục vào thư viện</span>
+          <span class="view-sub" id="liSub">POST /api/v2/person/add · ảnh base64 trong JSON</span>
+        </div>
+        <button class="m-x" data-mx id="liX" aria-label="Đóng">✕</button>
+      </div>
+      <div class="m-body nosb" style="grid-template-columns:1fr">
+        <div class="m-col">
+          <div style="display:flex;gap:11px;flex-wrap:wrap;align-items:flex-end">
+            <div data-seg class="seg" id="liKind" style="flex:none">
+              <button data-k="face" class="on">Nhân sự</button>
+              <button data-k="ppe">Đồng phục</button>
+            </div>
+            <div class="field" style="flex:1;min-width:180px"><label for="liLib">Thư viện</label>
+              <select id="liLib"></select></div>
+          </div>
+          <div class="field" id="liNameF"><label for="liName">Tên</label>
+            <input id="liName" maxlength="64" autocomplete="off" placeholder="VD: Nguyễn Văn A"></div>
+          <div style="display:flex;gap:11px;flex-wrap:wrap" id="liFaceF">
+            <div class="field" style="flex:1;min-width:120px"><label for="liSex">Giới tính</label>
+              <select id="liSex"><option value="1">Nam</option><option value="2">Nữ</option>
+                <option value="99" selected>Không rõ</option></select></div>
+            <div class="field" style="flex:2;min-width:170px"><label for="liIdNo">Số giấy tờ</label>
+              <input id="liIdNo" maxlength="127" autocomplete="off"></div>
+            <div class="field" style="flex:1;min-width:130px"><label for="liTel">Điện thoại</label>
+              <input id="liTel" maxlength="31" autocomplete="off"></div>
+          </div>
+          <div class="field"><label for="liFile">Ảnh</label>
+            <input id="liFile" type="file" accept="image/jpeg,image/png" multiple>
+            <span class="hint" id="liFileHint">JPG/PNG · ≤5MB mỗi ảnh</span></div>
+          <div class="lib-prev" id="liPrev"></div>
+        </div>
+      </div>
+      <div class="m-foot" style="justify-content:flex-end;align-items:center">
+        <span class="hint" id="liMsg" style="flex:1;min-width:0"></span>
+        <button data-glassbtn id="liNo" style="height:36px;padding:0 16px">Hủy</button>
+        <button data-goldbtn id="liOk" style="height:36px;padding:0 18px">Thêm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL · CHI TIẾT MỤC THƯ VIỆN ==================== -->
+  <div class="overlay" data-overlay id="ldWrap" hidden>
+    <div class="modal" data-modal data-glass style="width:min(720px,100%)" onclick="event.stopPropagation()">
+      <div class="m-head">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+          <span class="m-title" id="ldTitle">—</span>
+          <span class="view-sub" id="ldSub">—</span>
+        </div>
+        <button class="m-x" data-mx id="ldX" aria-label="Đóng">✕</button>
+      </div>
+      <div class="m-body nosb">
+        <div class="ld-img" id="ldImg"></div>
+        <div class="m-col" id="ldFields" style="gap:7px"></div>
+      </div>
+      <div class="m-foot" style="justify-content:flex-end">
+        <button data-glassbtn id="ldNo" style="height:36px;padding:0 16px">Đóng</button>
+        <button data-redbtn id="ldDel" style="height:36px;padding:0 16px">Xóa mục</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+</div>
+
+<!-- ============================ TILE TEMPLATE ============================
+   app.js makeTile(): $('#t-tile').content.firstElementChild.cloneNode(true) —
+   PHẢI có đúng MỘT element con. <video-stream> được prepend nên nó thành con ĐẦU
+   TIÊN, mọi overlay phía sau mới đè lên được.
+   paintTile() querySelector (first match wins) và THROW nếu thiếu bất kỳ cái nào:
+   .t-name .t-code .t-meta .t-note .scan .badge:not(.t-area) .t-area .t-top
+   Thứ tự badge là LOAD-BEARING: .t-area ĐỨNG TRƯỚC badge trạng thái vì .t-top là
+   flex (DOM order = visual order) và vì app.js tìm badge trạng thái bằng
+   `.badge:not(.t-area)`. Cả hai phải có sẵn trong template — append lúc chạy sẽ đẩy
+   .t-area sang phải LIVE. t.ar phải là con TRỰC TIẾP của .t-top vì markTiles()
+   dùng .t-top.insertBefore(alarmBadge, t.ar). -->
+<template id="t-tile">
+  <div class="tile" data-tile data-rim>
+    <span data-edge="top"></span><span data-edge="right"></span><span data-edge="bottom"></span><span data-edge="left"></span>
+    <div class="t-top">
+      <div class="t-id"><div class="t-name"></div><div class="t-code"></div></div>
+      <span class="badge t-area" title="Người trong vùng (real-time)" hidden>👥 —</span>
+      <span class="badge wait"><span class="t">…</span></span>
+    </div>
+    <div class="t-bot">
+      <span class="t-meta">—</span><div class="grow"></div><span class="t-note"></span>
+    </div>
+  </div>
+</template>
+
+<script type="module" src="ui.js"></script>
+<!-- Panel chọn nhóm Telegram: FIXED, đặt top-level (không nằm trong .nosb scroll)
+     nên không bị cắt/che bởi bảng thuật toán phía dưới. Vị trí gán bằng JS theo
+     nút "Quét nhóm" khi mở. -->
+<div id="tgPanel" class="tg-panel" hidden>
+  <div class="tg-panel-h">Nhóm nhận cảnh báo</div>
+  <div id="tgGroups" class="tg-groups"></div>
+  <div class="field" style="margin-top:10px">
+    <label>Thêm Chat ID thủ công (nhóm im lặng — Quét không thấy được)</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="tgChatManual" class="mono" placeholder="VD: -1001234567890" autocomplete="off" style="flex:1;min-width:0">
+      <button data-glassbtn id="tgAdd" style="height:36px;padding:0 14px;border-radius:12px;flex:none">Thêm</button>
+    </div>
+  </div>
+  <div class="tg-panel-f">
+    <button data-glassbtn id="tgTest" style="height:36px">Gửi thử</button>
+    <button data-glassbtn id="tgClose" style="height:36px;padding:0 14px">Đóng</button>
+    <button data-goldbtn id="tgSave" style="height:36px;padding:0 18px">Lưu</button>
+  </div>
+</div>
+<!-- Bảng thông báo "Nhật ký": FIXED top-level (khoi .card/.nosb de khong bi che),
+     mo duoi toan bo dock chuyen tab. "Đã xem" / "Xem chi tiết" / bam the -> go('log'). -->
+<div id="notifPanel" class="menu" data-glass hidden style="position:fixed;z-index:99999;width:min(340px,calc(100vw - 32px));padding:0;overflow:hidden;border-radius:16px;display:flex;flex-direction:column;max-height:calc(100vh - 84px);background:linear-gradient(180deg,rgba(24,28,34,.98),rgba(16,19,24,.98));border:1px solid rgba(213,194,149,.35);box-shadow:0 22px 54px rgba(0,0,0,.62)">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.08);flex:none">
+    <span style="font:700 12.5px/1 var(--b);color:#f5f5f7;letter-spacing:.04em">Thông báo</span>
+    <div style="display:flex;align-items:center;gap:6px">
+      <button data-glassbtn id="notifReadAll" style="height:28px;padding:0 10px;border-radius:9px;font-size:11.5px;white-space:nowrap">Đã xem</button>
+      <button data-glassbtn id="notifDetail" style="height:28px;padding:0 10px;border-radius:9px;font-size:11.5px;white-space:nowrap">Xem chi tiết</button>
+    </div>
+  </div>
+  <div id="notifList" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden"></div>
+</div>
+<!-- #dkSlotMenu FIXED top-level (khoi .card/.nosb de khong bi stacking-context
+     cua card che). Vi tri gan bang JS theo nut "dkSlotBtn" khi mo. -->
+<div id="dkSlotMenu" class="menu" data-glass hidden style="position:fixed;padding:6px;z-index:99999;border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.06));border:1px solid rgba(255,255,255,.22);box-shadow:0 16px 34px rgba(0,0,0,.55);animation:none">
+  <div class="mrow" data-slot="1" role="option"><span class="l">Platform 1</span></div>
+  <div class="mrow" data-slot="2" role="option"><span class="l">Platform 2</span></div>
+</div>
+</body>
+</html>

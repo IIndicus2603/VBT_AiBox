@@ -1,0 +1,780 @@
+// Entry point. app.js = state + render; file này = wiring + toast + modal + log.
+// Vòng import app.js <-> ui.js an toàn vì ui.js chỉ export function declaration
+// (được hoist) và app.js không chạy gì ở top-level.
+import {
+  $, $$, S, API, FILTERS, hms, fixPct, nice, mask, row,
+  tileState, isDown, pollStreams, drawGrid, paintTile, paintDetail,
+  openDetail, go, hooks, sampleFps, sampleRtt, dPlayer,
+} from './app.js';
+
+/* ================= toast ================= */
+
+function toast({sev, title, sub, name, kind, img, onSkip, hold}) {
+  const box = document.createElement('div');
+  box.className = 'toast ' + (kind || 'warn');
+  box.innerHTML =
+    '<div class="t-head"><span class="dot"></span><span class="t-sev"></span>' +
+    '<div class="grow"></div><span class="t-older" hidden></span>' +
+    '<span class="t-time"></span><button class="t-close">&#10005;</button></div>' +
+    '<div class="t-body"><div class="t-title"></div><div class="t-sub"></div>' +
+    '<div class="t-acts"><button class="go">Xem camera</button>' +
+    '<button class="skip">Bỏ qua</button></div></div>';
+  box.querySelector('.t-sev').textContent = sev;
+  box.querySelector('.t-time').textContent = hms(new Date());
+  box.querySelector('.t-title').textContent = title;
+  box.querySelector('.t-sub').textContent = sub || '';
+
+  const kill = () => { box.remove(); stackToasts(); };
+  box.querySelector('.t-close').onclick = kill;
+  // "Bỏ qua" = tắt cảnh báo (hết nháy viền), không chỉ đóng popup.
+  // Dấu X chỉ đóng popup, viền vẫn nháy — hai hành vi khác nhau có ý.
+  box.querySelector('.skip').onclick = () => { onSkip?.(); kill(); };
+  // Ảnh detect từ AI box: chèn trước phần nút, bấm vào ảnh cũng mở detail.
+  // Ảnh lỗi (file chưa kịp ghi / box từ chối) -> ẩn hẳn, không để ô vỡ xấu.
+  if (img) {
+    const im = document.createElement('img');
+    im.className = 't-img';
+    im.alt = 'Ảnh phát hiện từ ' + (sub || 'camera');
+    if (name) im.onclick = () => { kill(); openDetail(name); };
+    // THỨ TỰ QUAN TRỌNG: chèn vào DOM và gán onerror TRƯỚC khi gán src.
+    // Set src là load bắt đầu ngay; với ảnh lỗi tức thì (404/decode fail) sự kiện
+    // error bắn trước khi onerror kịp gán, và im.remove() lúc chưa vào DOM chạy
+    // trên node mồ côi -> ảnh biến mất im lặng.
+    box.querySelector('.t-acts').before(im);
+    im.onerror = () => {
+      // Log trước khi xoá: nuốt lỗi im lặng làm không phân biệt được 404,
+      // file chưa ghi xong, hay ảnh hỏng.
+      console.warn('[toast] ảnh lỗi, bỏ:', img);
+      im.remove();
+    };
+    im.src = img;
+  }
+
+  const goBtn = box.querySelector('.go');
+  if (name) goBtn.onclick = () => { kill(); openDetail(name); };
+  else goBtn.remove();
+
+  $('#toasts').append(box);
+  while ($('#toasts').children.length > 3) $('#toasts').firstElementChild.remove();
+  stackToasts();
+  // hold = cảnh báo detect, để lâu hơn cho kịp xem ảnh
+  setTimeout(kill, hold ? 60000 : 26000);
+}
+
+// mới nhất ở dưới cùng, cũ hơn nhô lên sau lưng nó một chút (kiểu xếp thẻ).
+// KHÔNG đẩy theo chiều cao thật: 3 toast có ảnh (326px) cộng lại vượt khỏi màn.
+function stackToasts() {
+  const list = [...$('#toasts').children];
+  list.forEach((el, i) => {
+    const depth = list.length - 1 - i;
+    el.style.transform = 'translateY(' + (-depth * 30) + 'px) scale(' + (1 - depth * 0.015) + ')';
+    el.style.zIndex = String(60 - depth);
+    el.style.opacity = depth === 0 ? '1' : depth === 1 ? '.85' : '.7';
+    const older = el.querySelector('.t-older');
+    older.hidden = !(depth === 0 && i > 0);
+    older.textContent = '+' + i + ' cũ hơn';
+  });
+}
+
+// Chỉ ghi lại trạng thái, KHÔNG popup. Mất/khôi phục kết nối đã thấy rõ ở badge
+// trên tile + bộ lọc "Có lỗi"; popup cho mỗi lần ngắt/nối lại chỉ gây ồn.
+// Toast để dành cho sự kiện detect và các hành động do người dùng gây ra.
+export function onStateChange(name, t) {
+  S.seen[name] = t.state;
+}
+
+/* ================= modal thêm luồng ================= */
+
+const M = {media: '', test: 'idle', rows: null, added: 0};
+const DASH = '<span class="rv none">—</span>';
+
+function paintModal() {
+  const t = M.test, r = M.rows || {};
+  const p = $('#mPrevMsg');
+  p.className = 'msg' + (t === 'ok' ? ' ok' : t === 'bad' ? ' err' : t === 'invalid' ? ' warn' : '');
+  p.textContent =
+    t === 'ok' ? '● NHẬN ĐƯỢC LUỒNG · ' + (r.codec || '') :
+    t === 'testing' ? 'Đang kết nối RTSP…' :
+    t === 'bad' ? (r.err || 'Không kết nối được') :
+    t === 'invalid' ? 'Cần URL dạng rtsp://user:pass@host:554/path' :
+    'Chưa kiểm tra · bấm "Kiểm tra kết nối"';
+
+  $('#mRows').innerHTML =
+    row('Kết nối',
+        t === 'ok' ? 'OK' : t === 'testing' ? 'đang thử…' : t === 'bad' ? 'thất bại' : DASH,
+        t === 'ok' ? 'ok' : t === 'bad' ? 'err' : '') +
+    row('Video', r.codec || DASH) +
+    row('Âm thanh', r.audio == null ? DASH : (r.audio ? 'có' : 'không có'), r.audio ? '' : 'none') +
+    row('Nguồn', r.addr || DASH);
+
+  $('#mHint').textContent = M.added
+    ? 'Đã thêm ' + M.added + ' luồng trong phiên này'
+    : 'Luồng mới hiện ngay trong lưới Live';
+  $('#mAdd').disabled = M.test === 'testing';
+  $('#mTest').textContent = M.test === 'testing' ? 'Đang kiểm tra…' : 'Kiểm tra kết nối';
+}
+
+function openModal() {
+  M.test = 'idle'; M.rows = null;
+  $('#mUrl').value = ''; $('#mName').value = '';
+  $('#modal').hidden = false;
+  paintModal();
+  $('#mUrl').focus();
+}
+
+const validRtsp = u => /^rtsp:\/\/\S+$/i.test(u);
+const putStream = (name, src) => fetch(
+  API + '?name=' + encodeURIComponent(name) + '&src=' + encodeURIComponent(src), {method: 'PUT'});
+
+// go2rtc KHÔNG probe được một URL lạ (?src=<url> -> 404): chỉ tên luồng đã có
+// trong config mới probe được. Nên phải PUT tên tạm -> probe -> DELETE.
+async function testUrl(src) {
+  const tmp = 'zz_test_' + Date.now().toString(36);
+  try {
+    const put = await putStream(tmp, src);
+    if (!put.ok) return {err: ((await put.text()) || 'PUT ' + put.status).slice(0, 120)};
+    // PUT chỉ ghi config, không dial. Chỉ GET kèm video/audio mới thật sự kết nối.
+    const r = await fetch(API + '?src=' + encodeURIComponent(tmp) + '&video=all&audio=all',
+                          {signal: AbortSignal.timeout(20000)});
+    const txt = await r.text();
+    if (!r.ok) return {err: txt.replace(/^streams:\s*/, '').trim().slice(0, 120) || 'HTTP ' + r.status};
+    const o = JSON.parse(txt), pr = o.producers && o.producers[0];
+    const vid = ((pr && pr.receivers) || []).map(x => x.codec)
+      .find(c => c && c.codec_type === 'video');
+    if (!vid) return {err: 'kết nối được nhưng không có video'};
+    return {
+      codec: nice(vid.codec_name) +
+        (vid.profile && vid.level ? ' ' + vid.profile + ' ' + (vid.level / 10).toFixed(1) : ''),
+      audio: (pr.medias || []).some(m => m.startsWith('audio')),
+      addr: pr.remote_addr || null,
+    };
+  } catch {
+    // server không đặt deadline khi dial -> timeout phía client là bắt buộc
+    return {err: 'timeout — camera không phản hồi (sai mật khẩu hoặc không tới được)'};
+  } finally {
+    await fetch(API + '?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
+  }
+}
+
+export async function removeStream(name) {
+  if (!confirm('Xoá luồng "' + name + '" khỏi go2rtc.yaml?')) return;
+  const t = S.tiles.get(name);
+  if (t) { t.box.remove(); S.tiles.delete(name); }
+  delete S.seen[name];
+  if (S.focus === name) go('live');
+  await fetch(API + '?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
+  // DELETE trả 200 cả khi tên không tồn tại -> phải GET lại mới biết đã xoá thật
+  await refresh();
+  toast({kind: 'warn', sev: 'ĐÃ XOÁ', title: 'Đã xoá luồng ' + name});
+}
+
+/* ================= log + config ================= */
+
+const LV = {error: 'err', warn: 'warn', info: 'info'};
+
+export async function loadLog() {
+  const box = $('#logBox');
+  try {
+    // /api/log trả NDJSON (mỗi dòng một object), không phải mảng JSON
+    const r = await fetch('api/log', {signal: AbortSignal.timeout(6000)});
+    const lines = (await r.text()).trim().split('\n').filter(Boolean).reverse();
+    if (!lines.length) { box.innerHTML = '<div class="hint">Bộ đệm trống</div>'; return; }
+    box.replaceChildren(...lines.slice(0, 300).map(l => {
+      let o;
+      try { o = JSON.parse(l); } catch { o = {message: l, level: 'info'}; }
+      const el = document.createElement('div');
+      el.className = 'log-row ' + (LV[o.level] || '');
+      el.innerHTML = '<span class="log-t"></span><span class="log-lv"></span>' +
+                     '<span class="log-m"></span><span class="log-c"></span>';
+      el.querySelector('.log-t').textContent = o.time ? hms(new Date(o.time)) : '';
+      el.querySelector('.log-lv').textContent = (o.level || '').toUpperCase();
+      el.querySelector('.log-m').textContent =
+        mask([o.message, o.error].filter(Boolean).join(' · ')) || '—';
+      // caller chỉ là đường dẫn file Go, KHÔNG gắn với tên camera nào
+      el.querySelector('.log-c').textContent = (o.caller || '').split('/').pop();
+      return el;
+    }));
+  } catch (e) {
+    box.innerHTML = '<div class="hint"></div>';
+    box.firstChild.textContent = 'Không đọc được /api/log: ' + e.message;
+  }
+}
+
+// Che mật khẩu trong YAML. Che userinfo của URL là KHÔNG đủ: go2rtc.yaml hay có
+// comment kiểu "# mật khẩu UNV123456%25" nằm ngoài URL. Nên: thu mật khẩu từ các
+// URL trước, rồi xoá đúng chuỗi đó ở mọi chỗ còn lại.
+export function maskYaml(txt) {
+  const pw = new Set();
+  txt.replace(/rtsp:\/\/[^\s:@/]+:([^\s@/]+)@/gi, (m, p) => (pw.add(p), m));
+  let out = txt.replace(/(rtsp:\/\/[^\s:@/]+):[^\s@/]*@/gi, '$1:••••@');
+  // dài trước ngắn để không cắt dở chuỗi lồng nhau; bỏ token quá ngắn kẻo che oan
+  for (const p of [...pw].sort((a, b) => b.length - a.length)) {
+    if (p.length >= 4) out = out.split(p).join('••••');
+  }
+  return out;
+}
+
+export async function loadCfg() {
+  try {
+    const r = await fetch('api/config', {signal: AbortSignal.timeout(6000)});
+    // /api/config là cấu hình TRONG RAM, có thể lệch với file trên đĩa
+    $('#cfgBox').textContent = maskYaml(await r.text());
+  } catch (e) {
+    $('#cfgBox').textContent = 'Không đọc được /api/config: ' + e.message;
+  }
+}
+
+/* ================= vòng lặp ================= */
+
+async function refresh() {
+  try {
+    const j = await pollStreams();
+    const names = Object.keys(j).sort();
+    const changed = names.join() !== S.order.join();
+    S.order = names;
+    if (changed) drawGrid();
+    else [...S.tiles.keys()].forEach(paintTile);
+
+    const live = S.order.filter(n => tileState(n) === 'live').length;
+    $('#cOnline').textContent = live + '/' + S.order.length + ' LUỒNG PHÁT';
+    $('#dGo').style.background = 'var(--ok)';
+    $('#dGo').style.animation = 'omPulse 2s ease-in-out infinite';
+    if (S.view === 'detail') paintDetail();
+  } catch {
+    $('#cOnline').textContent = 'GO2RTC KHÔNG PHẢN HỒI';
+    $('#dGo').style.background = 'var(--err)';
+    $('#dGo').style.animation = 'none';
+  }
+}
+
+/* ================= wiring ================= */
+
+$$('nav button').forEach(b => b.onclick = () => go(b.dataset.go));
+$('#back').onclick = () => go('live');
+
+$('#fList').replaceChildren(...FILTERS.map(f => {
+  const b = document.createElement('button');
+  b.className = f.k === S.filter ? 'on' : '';
+  b.innerHTML = '<span class="dot"></span><span class="l"></span><span class="k"></span>';
+  b.querySelector('.dot').style.background = f.dot;
+  b.querySelector('.l').textContent = f.l;
+  b.onclick = () => {
+    S.filter = f.k; S.page = 0;
+    $('#fLabel').textContent = f.l;
+    $('#fMenu').hidden = true;
+    $$('#fList button').forEach((x, i) => x.classList.toggle('on', FILTERS[i].k === f.k));
+    drawGrid();
+  };
+  return b;
+}));
+
+$('#fBtn').onclick = e => {
+  e.stopPropagation();
+  $$('#fList button').forEach((b, i) => {
+    const k = FILTERS[i].k;
+    b.querySelector('.k').textContent = String(S.order.filter(n =>
+      k === 'live' ? tileState(n) === 'live' : k === 'down' ? isDown(n) : true).length);
+  });
+  const m = $('#fMenu');
+  m.hidden = !m.hidden;
+  $('#fBtn').style.borderColor = m.hidden ? '' : 'var(--cy)';
+};
+$('#fMenu').onclick = e => e.stopPropagation();
+document.addEventListener('click', () => {
+  $('#fMenu').hidden = true;
+  $('#fBtn').style.borderColor = '';
+});
+
+$$('#layout button').forEach(b => b.onclick = () => {
+  S.cols = +b.dataset.cols; S.page = 0;
+  $$('#layout button').forEach(x => x.classList.toggle('on', x === b));
+  drawGrid();
+});
+$('#pgPrev').onclick = () => { if (S.page > 0) { S.page--; drawGrid(); } };
+$('#pgNext').onclick = () => { S.page++; drawGrid(); };
+
+$('#addBtn').onclick = openModal;
+$('#mClose').onclick = $('#mCancel').onclick = () => $('#modal').hidden = true;
+$('#modal').onclick = e => { if (e.target === $('#modal')) $('#modal').hidden = true; };
+$$('#mMedia button').forEach(b => b.onclick = () => {
+  M.media = b.dataset.media;
+  $$('#mMedia button').forEach(x => x.classList.toggle('on', x === b));
+});
+$('#mUrl').oninput = () => { M.test = 'idle'; M.rows = null; paintModal(); };
+
+// '#video' là query của go2rtc: bỏ track audio ngay ở nguồn
+const srcOf = () => {
+  const u = fixPct($('#mUrl').value.trim());
+  return M.media === 'video' && !u.includes('#') ? u + '#video' : u;
+};
+
+$('#mTest').onclick = async () => {
+  if (!validRtsp($('#mUrl').value.trim())) { M.test = 'invalid'; return paintModal(); }
+  M.test = 'testing'; M.rows = null; paintModal();
+  const r = await testUrl(srcOf());
+  M.rows = r; M.test = r.err ? 'bad' : 'ok';
+  paintModal();
+};
+
+$('#mAdd').onclick = async () => {
+  const url = $('#mUrl').value.trim(), name = $('#mName').value.trim();
+  if (!validRtsp(url)) { M.test = 'invalid'; return paintModal(); }
+  if (!/^[A-Za-z0-9_.\-]+$/.test(name)) { alert('Tên luồng chỉ gồm chữ, số, _ . -'); return; }
+  if (S.order.includes(name) && !confirm('"' + name + '" đã tồn tại. Ghi đè?')) return;
+  const r = await putStream(name, srcOf());
+  if (!r.ok) { alert((await r.text()) || 'PUT ' + r.status); return; }
+  M.added++;
+  $('#modal').hidden = true;
+  await refresh();
+  toast({kind: 'ok', sev: 'ĐÃ THÊM', title: 'Đã thêm luồng ' + name, name});
+};
+
+$('#dReload').onclick = () => { if (S.focus) openDetail(S.focus); };
+$('#dDel').onclick = () => { if (S.focus) removeStream(S.focus); };
+$('#dPlay').onclick = () => {
+  const v = dPlayer && dPlayer.video;
+  if (!v) return;
+  if (v.paused) { v.play(); $('#dPlay').textContent = '⏸'; }
+  else { v.pause(); $('#dPlay').textContent = '▶'; }
+};
+$('#dMute').onclick = () => {
+  const v = dPlayer && dPlayer.video;
+  if (!v) return;
+  v.muted = !v.muted;
+  $('#dMute').textContent = v.muted ? '🔇' : '🔊';
+};
+$('#dFull').onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else $('#stage').requestFullscreen();
+};
+// /api/frame.jpeg cần ffmpeg (máy này không có) -> chụp từ <video> bằng canvas
+$('#dSnap').onclick = () => {
+  const v = dPlayer && dPlayer.video;
+  if (!v || !v.videoWidth) { alert('Chưa có hình để chụp'); return; }
+  const c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  const a = document.createElement('a');
+  a.download = S.focus + '_' + hms(new Date()).replace(/:/g, '') + '.png';
+  a.href = c.toDataURL('image/png');
+  a.click();
+};
+
+$('#logRefresh').onclick = loadLog;
+$('#logClear').onclick = async () => {
+  await fetch('api/log', {method: 'DELETE'}).catch(() => {});
+  loadLog();
+};
+$('#cfgRefresh').onclick = loadCfg;
+
+/* ================= khởi động ================= */
+
+const tick = () => $('#clock').textContent = hms(new Date());
+tick();
+setInterval(tick, 1000);
+
+fetch('api').then(r => r.json()).then(j => {
+  $('#cfgPath').textContent = j.config_path || 'GET /api/config';
+}).catch(() => {});
+
+setInterval(refresh, 2000);
+setInterval(() => {
+  for (const t of S.tiles.values()) sampleFps(t.player);
+  if (dPlayer) { sampleFps(dPlayer); sampleRtt(dPlayer); }
+}, 2000);
+setInterval(() => { if (S.view === 'log' && $('#logAuto').checked) loadLog(); }, 5000);
+
+refresh();
+
+/* ================= AIBOX: cau hinh AI + alarm realtime ================= */
+import {openAI, initAI, startAlarms, setNote, alarms, alarmsOf, camOf, imgOf,
+        isDetect, activeAlarm, clearAlarm, algoName, algoGroups, algoAll, cameraList,
+        hashrate, BASE} from './ai.js';
+
+initAI();
+setNote((m, sev) => toast({sev: sev === 'err' ? 'error' : sev === 'warn' ? 'warn' : 'info',
+  title: m, kind: 'ai'}));
+$('#dAI').onclick = () => S.focus && openAI(S.focus);
+$('#aiCancel').onclick = () => $('#aiWrap').hidden = true;
+
+/* ---------------- trạng thái AI SmartBox (header) ---------------- */
+// BA thứ khác nhau, đừng gộp làm một: (1) bridge aibox.py còn sống không,
+// (2) box đã được cấu hình chưa, (3) box có trả lời không. Chỉ (3) mới thật sự
+// gọi vào box qua digest auth -> không poll dày, và SSE/alarm đã là tín hiệu
+// sống miễn phí. Fetch inline (không dùng cnPost) để có timeout riêng.
+let boxName = '';
+
+function boxDot(txt, col, pulse) {
+  $('#cBox').textContent = txt;
+  $('#cBox').style.color = col;
+  const d = $('#dBox');
+  d.style.background = col;
+  d.style.animation = pulse ? 'omPulse 2s ease-in-out infinite' : 'none';
+}
+
+let boxBusy = false;
+async function checkBox() {
+  if (boxBusy) return;
+  boxBusy = true;
+  try {
+    let d;
+    try {
+      const j = await (await fetch(BASE + 'api/conn',
+        {signal: AbortSignal.timeout(6000)})).json();
+      d = j.data || {};
+    } catch {
+      return boxDot('AI BOX MẤT KẾT NỐI', 'var(--err2)');   // aibox.py chưa chạy
+    }
+    if (!d.host) return boxDot('AI BOX CHƯA CẤU HÌNH', 'var(--warn)');
+    if (!d.has_pass) return boxDot('AI BOX THIẾU MẬT KHẨU', 'var(--warn)');
+    boxDot('AI BOX ĐANG THỬ…', 'var(--muted)');
+    const r = await fetch(BASE + 'api/conn/test', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await r.json();
+    if (j.code === 0) {
+      boxName = (j.data || {}).device_name || (j.data || {}).model || d.host;
+      boxDot('AI BOX ' + boxName, 'var(--ok)', true);
+    } else {
+      // code 3 = sai user/pass, 1000-1004 = lỗi đăng nhập, -1 = không tới được box
+      boxDot('AI BOX LỖI ' + j.code, 'var(--err2)');
+    }
+  } catch {
+    boxDot('AI BOX KHÔNG PHẢN HỒI', 'var(--err2)');
+  } finally {
+    boxBusy = false;
+  }
+}
+
+
+
+// Cảnh báo detect: popup có ảnh + viền nháy trên tile + thanh lịch sử ở detail.
+startAlarms(ev => {
+  if (ev.kind === 'sse' || !isDetect(ev)) { markTiles(); return; }
+  const cam = camOf(ev);
+  toast({
+    sev: 'warn', kind: 'alarm', hold: true,
+    title: algoName(ev.algo_model, ev.algo_name) || ev.label,
+    sub: [ev.channel_name || cam, hms(new Date((ev.ts || 0) * 1000))].filter(Boolean).join(' · '),
+    name: cam && S.api[cam] ? cam : null,      // chỉ mở detail khi stream có thật
+    img: imgOf(ev),
+    onSkip: () => cam && clearAlarm(cam),      // "Bỏ qua" = tắt luôn viền nháy
+  });
+  markTiles();
+  if (S.view === 'detail' && S.focus === cam) paintHistory();
+  if (S.view === 'log') paintAlarms();
+}, name => {                                    // clearAlarm -> vẽ lại ngay
+  markTiles();
+  if (S.view === 'detail' && S.focus === name) paintHistory();
+});
+
+/** Viền nháy đỏ + badge số cảnh báo trên tile đang cảnh báo. */
+function markTiles() {
+  for (const [name, t] of S.tiles) {
+    const a = activeAlarm(name);
+    t.box.classList.toggle('detect', !!a);
+    let b = t.box.querySelector('.t-ai');
+    if (!a) { b?.remove(); continue; }
+    if (!b) {
+      b = document.createElement('span');
+      b.className = 't-ai';
+      b.title = 'Bấm để bỏ qua cảnh báo';
+      b.onclick = e => { e.stopPropagation(); clearAlarm(name); };
+      t.box.querySelector('.t-top').append(b);
+    }
+    b.textContent = `⚠ ${a.n}`;
+  }
+}
+
+/** Thanh lịch sử cảnh báo dưới stream ở trang chi tiết. */
+export function paintHistory() {
+  const wrap = $('#hist');
+  if (!wrap) return;
+  const name = S.focus;
+  const list = name ? alarmsOf(name) : [];
+  const a = name ? activeAlarm(name) : null;
+  $('#histN').textContent = list.length ? `${list.length} cảnh báo` : 'chưa có cảnh báo';
+  $('#histAck').hidden = !a;
+
+  if (!list.length) {
+    wrap.innerHTML = '<span class="h-empty">Chưa có cảnh báo nào từ AI box cho camera này</span>';
+    return;
+  }
+  wrap.replaceChildren(...list.slice(0, 40).map(x => {
+    const el = document.createElement('div');
+    el.className = 'h-item';
+    const img = imgOf(x);
+    el.innerHTML =
+      (img ? `<img src="${img}" alt="Ảnh phát hiện ${algoName(x.algo_model) || ''}" loading="lazy">`
+           : '<div class="h-noimg">không ảnh</div>') +
+      `<span class="h-algo"></span><span class="h-time"></span>`;
+    el.querySelector('.h-algo').textContent = algoName(x.algo_model, x.algo_name) || x.label;
+    el.querySelector('.h-time').textContent = hms(new Date((x.ts || 0) * 1000));
+    const im = el.querySelector('img');
+    if (im) im.onerror = () => im.replaceWith(
+      Object.assign(document.createElement('div'), {className: 'h-noimg', textContent: 'ảnh lỗi'}));
+    return el;
+  }));
+}
+
+$('#histAck').onclick = () => S.focus && clearAlarm(S.focus);
+
+// LOI CU: paintHistory chi chay khi co alarm MOI toi -> mo camera ra thi thanh
+// lich su chua tung duoc ve lan nao. Ve moi khi vao detail.
+hooks.onView = view => { if (view === 'detail') paintHistory(); };
+
+function paintAlarms() {
+  const box = $('#logBox');
+  const rows = alarms().slice(0, 120).map(a => {
+    const img = imgOf(a);
+    const cam = camOf(a);
+    return `<div class="al-row"><span class="t">${hms(new Date((a.ts || 0) * 1000))}</span>` +
+      `<span class="m">${algoName(a.algo_model, a.algo_name) || a.label}</span>` +
+      `<span class="c">${a.channel_name || cam || '—'}${a.video ? ' · video' : ''}</span>` +
+      (img ? `<img src="${img}" alt="">` : '') + `</div>`;
+  }).join('');
+  box.innerHTML = rows || '<span style="color:var(--muted)">Chưa có cảnh báo</span>';
+}
+
+/* ---------------- form ket noi AI Smartbox (tab Cau hinh) ---------------- */
+
+const cnState = (txt, col) => {
+  const el = $('#cnState');
+  el.textContent = txt;
+  el.style.color = col || 'var(--muted)';
+};
+
+async function cnLoad() {
+  try {
+    const j = await (await fetch(BASE + 'api/conn')).json();
+    const d = j.data || {};
+    $('#cnHost').value = d.host || '';
+    $('#cnPort').value = d.port || 80;
+    $('#cnUser').value = d.user || 'admin';
+    $('#cnPassHint').textContent = d.has_pass
+      ? 'Đã có mật khẩu · bỏ trống = giữ nguyên'
+      : 'Chưa có mật khẩu — phải điền';
+    cnState(d.host ? `Đã cấu hình ${d.host}:${d.port}` : 'Chưa cấu hình', 
+      d.host && d.has_pass ? 'var(--dim)' : 'var(--warn)');
+  } catch {
+    cnState('Không gọi được bridge (aibox.py chưa chạy?)', 'var(--err2)');
+  }
+}
+
+const cnPost = async (path, body) => {
+  const r = await fetch(BASE + path, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {}),
+  });
+  return r.json();
+};
+
+$('#cnSave').onclick = async () => {
+  const host = $('#cnHost').value.trim();
+  if (!host) return cnState('Điền IP trước', 'var(--warn)');
+  cnState('Đang lưu…');
+  const j = await cnPost('api/conn', {
+    host, port: +$('#cnPort').value || 80,
+    user: $('#cnUser').value.trim() || 'admin',
+    pass: $('#cnPass').value,          // rỗng = giữ mật khẩu cũ
+  });
+  $('#cnPass').value = '';             // không giữ mật khẩu trong DOM
+  if (j.code !== 0) return cnState(j.msg || 'Lưu thất bại', 'var(--err2)');
+  await cnLoad();
+  toast({sev: 'info', title: 'Đã lưu kết nối ' + host, kind: 'ai'});
+};
+
+$('#cnTest').onclick = async () => {
+  cnState('Đang kiểm tra…');
+  const j = await cnPost('api/conn/test');
+  if (j.code === 0) {
+    const d = j.data || {};
+    cnState(`OK · ${d.device_name || d.model || 'AIBOX'}` +
+      (d.serial_number ? ` · ${d.serial_number}` : ''), 'var(--ok)');
+  } else {
+    // code 3 = Not Authorized (sai user/pass), 1000-1004 = loi dang nhap
+    cnState(`Lỗi ${j.code}: ${j.msg || 'không rõ'}`, 'var(--err2)');
+  }
+};
+
+$('#cnSync').onclick = async () => {
+  cnState('Đang đồng bộ camera…');
+  const j = await cnPost('api/sync');
+  if (j.code !== 0) return cnState(`Lỗi ${j.code}: ${j.msg || ''}`, 'var(--err2)');
+  cnState(`Thêm ${(j.added || []).length} · giữ ${(j.kept || []).length} luồng`, 'var(--ok)');
+  pollStreams().then(drawGrid);
+};
+
+$('#cnHost').addEventListener('keydown', e => e.key === 'Enter' && $('#cnSave').click());
+$('#cnPass').addEventListener('keydown', e => e.key === 'Enter' && $('#cnSave').click());
+cnLoad();
+
+checkBox();
+setInterval(checkBox, 60000);
+
+/* ---------------- tab Cấu hình: 20 thuật toán box nạp ---------------- */
+
+const AL = {supported: [], loaded: [], max: 20, hashrate: null};
+
+async function loadAlgos() {
+  $('#alGrid').innerHTML = '<span class="al-load">Đang đọc từ box…</span>';
+  try {
+    const j = await algoAll();
+    if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+    Object.assign(AL, j.data || {});
+    paintAlgos();
+  } catch (e) {
+    $('#alGrid').innerHTML = `<span class="al-load" style="color:var(--err2)">${e.message}</span>`;
+  }
+}
+
+function paintAlgos() {
+  const on = new Set(AL.loaded);
+  $('#alHint').textContent = AL.hashrate != null
+    ? `Box còn ${AL.hashrate}% công suất · giới hạn ${AL.max} thuật toán nạp cùng lúc`
+    : `Box giới hạn ${AL.max} thuật toán nạp cùng lúc`;
+
+  // Chia theo category; trong mỗi nhóm thì đã nạp lên đầu rồi mới xếp theo tên.
+  const item = m => {
+    const el = document.createElement('div');
+    el.className = 'al-item' + (on.has(m) ? ' on' : '');
+    el.title = m;                                   // mã kỹ thuật khi hover
+    el.innerHTML = `<span class="al-dot"></span><span class="al-nm"></span>`;
+    el.querySelector('.al-nm').textContent = algoName(m);
+    return el;
+  };
+
+  const cell = (cls, ...kids) => {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.append(...kids);
+    return el;
+  };
+  const span = (cls, txt, color) => {
+    const el = document.createElement('span');
+    el.className = cls;
+    el.textContent = txt;
+    if (color) el.style.color = color;
+    return el;
+  };
+
+  // Hàng tiêu đề: cột trái Category, cột phải Algorithm Function (đã nạp / giới hạn)
+  const head = [
+    cell('al-th', span('', 'Category')),
+    cell('al-th', span('', 'Algorithm Function'),
+      span('al-cnt', `(${on.size}/${AL.max})`, on.size >= AL.max ? 'var(--warn)' : 'var(--cy)')),
+  ];
+
+  // KHÔNG sort: thứ tự trong ALGO_CAT chính là thứ tự box liệt kê.
+  $('#alGrid').replaceChildren(...head, ...algoGroups(AL.supported).flatMap(({cat, models}) => {
+    const nOn = models.filter(m => on.has(m)).length;
+    return [
+      cell('al-cat', span('c', cat),
+        span('n', nOn ? `${nOn}/${models.length} đang nạp` : `${models.length}`,
+          nOn ? 'var(--cy)' : null)),
+      cell('al-items', ...models.map(item)),
+    ];
+  }));
+}
+
+$('#alWeb').onclick = async () => {
+  const j = await (await fetch(BASE + 'api/conn')).json();
+  const h = (j.data || {}).host;
+  if (h) window.open(`http://${h}/`, '_blank', 'noopener');
+  else toast({sev: 'CHƯA CÓ IP', title: 'Chưa cấu hình IP của box', kind: 'warn'});
+};
+
+/* ---------------- tab Camera: danh sách + cấu hình AI ---------------- */
+
+async function loadCams() {
+  $('#camList').innerHTML = '<div class="al-load">Đang đọc danh sách camera…</div>';
+  try {
+    const j = await cameraList();
+    if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+    const cams = j.data || [];
+    const tot = cams.reduce((n, c) => n + (c.algos || []).length, 0);
+    $('#camSub').textContent =
+      `${cams.length} camera · ${cams.filter(c => c.status === 1).length} online · ${tot} thuật toán đang chạy`;
+
+    const hr = await hashrate(1, []);
+    const v = (hr.data || {}).hashrate;
+    $('#camHr').textContent = v != null ? v + '%' : '—';
+    $('#camHr').style.color = v == null ? '' : v < 20 ? 'var(--err2)' : v < 50 ? 'var(--warn)' : 'var(--ok)';
+
+    $('#camList').replaceChildren(...cams.map(camRow));
+  } catch (e) {
+    $('#camList').innerHTML = `<div class="al-load" style="color:var(--err2)">${e.message}</div>`;
+  }
+}
+
+function camRow(c) {
+  const el = document.createElement('div');
+  el.className = 'cam-row' + (c.status === 1 ? '' : ' off');
+  const algos = c.algos || [];
+  el.innerHTML =
+    `<span class="cam-id"></span>` +
+    `<div class="cam-mid"><span class="cam-nm"></span><span class="cam-ip"></span></div>` +
+    `<div class="cam-tags"></div>` +
+    `<span class="cam-st"></span>` +
+    `<button class="btn cam-cfg">Cấu hình AI</button>`;
+  el.querySelector('.cam-id').textContent = 'ch' + c.channel_id;
+  el.querySelector('.cam-nm').textContent = c.name || '—';
+  el.querySelector('.cam-ip').textContent = c.ip || '';
+  el.querySelector('.cam-st').textContent = c.status === 1 ? 'ONLINE' : 'OFFLINE';
+  el.querySelector('.cam-st').className = 'cam-st ' + (c.status === 1 ? 'ok' : 'off');
+
+  const tags = el.querySelector('.cam-tags');
+  if (!algos.length) {
+    tags.innerHTML = '<span class="cam-none">chưa bật AI</span>';
+  } else {
+    tags.replaceChildren(...algos.slice(0, 4).map(m => {
+      const t = document.createElement('span');
+      t.className = 'cam-tag';
+      t.textContent = algoName(m);
+      t.title = m;
+      return t;
+    }));
+    if (algos.length > 4) {
+      const more = document.createElement('span');
+      more.className = 'cam-none';
+      more.textContent = `+${algos.length - 4}`;
+      tags.append(more);
+    }
+  }
+  // openAI() suy channel_id từ tên stream ch<id> nên truyền đúng dạng đó
+  el.querySelector('.cam-cfg').onclick = () => openAI(c.stream);
+  return el;
+}
+
+// Thuat toan cua camera dang mo, o sidebar trang chi tiet. Dung luon /api/cameras
+// (da tra algos moi channel) thay vi goi /smart/list rieng — mot call, khong them
+// endpoint. Ten paintAlgos da bi tab Cau hinh giu -> ten khac.
+async function paintDetailAlgos() {
+  const el = $('#dAlgos'), name = S.focus;
+  el.innerHTML = row('…', 'đang đọc từ box', 'dim');
+  try {
+    const j = await cameraList();
+    if (name !== S.focus) return;            // user doi camera trong luc cho box
+    if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
+    const cam = (j.data || []).find(c => c.stream === name);
+    if (!cam) return el.innerHTML = row('—', 'không phải channel của AI BOX', 'none');
+    const algos = cam.algos || [];
+    el.innerHTML = algos.length
+      ? algos.map(m => row(algoName(m), 'đang chạy', 'ok')).join('')
+      : row('—', 'chưa bật thuật toán nào', 'none');
+  } catch (e) {
+    if (name === S.focus) el.innerHTML = row('Lỗi', e.message, 'err');
+  }
+}
+
+$('#camReload').onclick = loadCams;
+
+// Vào tab nào thì nạp tab đó — không poll box liên tục
+const prevOnView = hooks.onView;
+hooks.onView = view => {
+  prevOnView?.(view);
+  if (view === 'cam') loadCams();
+  if (view === 'cfg') loadAlgos();
+  if (view === 'detail') paintDetailAlgos();
+};

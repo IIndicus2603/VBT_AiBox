@@ -1,0 +1,327 @@
+<meta charset="utf-8">
+<title>UNV SmartBox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+
+<div id="app">
+  <header>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="logo">U</div>
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <span class="brand">UNV SmartBox</span>
+        <span class="brand-sub">RTSP · GO2RTC</span>
+      </div>
+    </div>
+    <div class="chip"><span class="k">VỊ TRÍ</span><span class="v" id="site">C27</span><span style="color:var(--off);font-size:10px">▾</span></div>
+    <nav>
+      <button data-go="live" class="on"><span class="i">▦</span><span class="l">Live</span></button>
+      <button data-go="log"><span class="i">◷</span><span class="l">Nhật ký</span></button>
+      <button data-go="cam"><span class="i">▣</span><span class="l">Camera</span></button>
+      <button data-go="cfg"><span class="i">⚙</span><span class="l">Cấu hình</span></button>
+    </nav>
+    <div class="grow"></div>
+    <div class="stat"><span class="dot" id="dGo" style="background:var(--off)"></span><span id="cOnline">—</span></div>
+    <div class="stat" id="sBox"><span class="dot" id="dBox" style="background:var(--off)"></span><span id="cBox">AI BOX …</span></div>
+    <span id="clock">--:--:--</span>
+    <div class="avatar">TT</div>
+  </header>
+
+  <div class="body">
+    <main>
+      <!-- ===== LIVE ===== -->
+      <section class="view" id="v-live">
+        <div class="bar">
+          <span class="h1">Tất cả camera</span>
+          <span class="sub" id="camCount">—</span>
+          <div class="grow"></div>
+          <div class="drop">
+            <button class="btn" id="fBtn"><span class="k">LỌC</span><span id="fLabel">Tất cả</span><span style="color:var(--ghost);font-size:10px">▾</span></button>
+            <div class="menu" id="fMenu" hidden>
+              <div id="fList"></div>
+              <div class="msep"></div>
+              <div class="mrow"><span class="l">Bố cục</span>
+                <div class="seg" id="layout">
+                  <button data-cols="2">2×2</button>
+                  <button data-cols="3" class="on">3×3</button>
+                  <button data-cols="4">4×4</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="vr"></div>
+          <button class="btn-cy" id="addBtn"><span style="font:500 14px/1 var(--m)">+</span>Thêm camera RTSP</button>
+        </div>
+        <div class="scroll">
+          <div id="grid"></div>
+          <div class="pager" id="pager" hidden>
+            <div></div>
+            <div class="mid">
+              <button class="btn" id="pgPrev">← Trước</button>
+              <span id="pgNums" style="display:flex;gap:10px"></span>
+              <button class="btn" id="pgNext">Sau →</button>
+            </div>
+            <span class="range" id="pgRange"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== DETAIL ===== -->
+      <section class="view" id="v-detail" hidden>
+        <div class="bar" style="padding:11px 18px">
+          <button class="btn" id="back">← Tất cả camera</button>
+          <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+            <span class="h1" id="dName">—</span>
+            <span class="sub" id="dSrc">—</span>
+          </div>
+          <div class="grow"></div>
+          <button class="btn-cy" id="dAI" style="padding:8px 14px">Cấu hình AI</button>
+          <button class="btn" id="dSnap">Lưu ảnh</button>
+          <button class="btn btn-del" id="dDel">Xoá camera</button>
+          <button class="btn" id="dReload">Tải lại luồng</button>
+        </div>
+        <div class="split">
+          <div class="stage-wrap">
+            <div class="stage" id="stage">
+              <div class="lines"></div>
+              <div class="s-top">
+                <span class="live" id="dLive"><span class="dot"></span>LIVE</span>
+                <span class="qual" id="dQual">—</span>
+              </div>
+              <div class="s-bot">
+                <button id="dPlay" title="Tạm dừng">⏸</button>
+                <button id="dMute" title="Bật tiếng">🔇</button>
+                <button id="dFull" title="Toàn màn hình">⛶</button>
+                <div class="grow"></div>
+                <span class="qual" id="dUp">—</span>
+              </div>
+            </div>
+            <div class="hist-bar">
+              <div class="hist-h">
+                <span class="hist-t">LỊCH SỬ CẢNH BÁO</span>
+                <span class="hist-n" id="histN">—</span>
+                <div class="grow"></div>
+                <button class="btn" id="histAck" hidden>Bỏ qua cảnh báo</button>
+              </div>
+              <div class="hist-list" id="hist"></div>
+            </div>
+          </div>
+          <aside>
+            <div class="card">
+              <div class="card-h">LUỒNG RTSP</div>
+              <div id="dRows"></div>
+            </div>
+            <div class="card">
+              <div class="card-h">PHIÊN XEM</div>
+              <div id="dRows2"></div>
+            </div>
+            <div class="card">
+              <div class="card-h">THUẬT TOÁN AI</div>
+              <div id="dAlgos"></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===== LOG ===== -->
+      <section class="view" id="v-log" hidden>
+        <div class="bar">
+          <span class="h1">Nhật ký go2rtc</span>
+          <span class="sub">GET /api/log · bộ đệm trong RAM</span>
+          <div class="grow"></div>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--dim)">
+            <input type="checkbox" id="logAuto" checked style="width:auto;padding:0;accent-color:var(--cy)">Tự làm mới
+          </label>
+          <button class="btn" id="logRefresh">Làm mới</button>
+          <button class="btn" id="logClear">Xoá bộ đệm</button>
+        </div>
+        <div class="scroll"><div class="log" id="logBox"></div></div>
+      </section>
+
+      <!-- ===== CONFIG ===== -->
+      <!-- ===== CAMERA LIST ===== -->
+      <section class="view" id="v-cam" hidden>
+        <div class="bar">
+          <span class="h1">Cấu hình camera</span>
+          <span class="sub" id="camSub">—</span>
+          <div class="grow"></div>
+          <div class="chip"><span class="k">CÔNG SUẤT CÒN</span><span class="v" id="camHr">—</span></div>
+          <button class="btn" id="camReload">Làm mới</button>
+        </div>
+        <div class="scroll"><div class="cam-list" id="camList"></div></div>
+      </section>
+
+      <section class="view" id="v-cfg" hidden>
+        <div class="bar">
+          <span class="h1">Cấu hình go2rtc</span>
+          <span class="sub" id="cfgPath">GET /api/config</span>
+          <div class="grow"></div>
+          <button class="btn" id="cfgRefresh">Làm mới</button>
+        </div>
+        <div class="scroll">
+          <div class="card cn-card">
+            <div class="card-h">KẾT NỐI AI SMARTBOX</div>
+            <div class="cn-grid">
+              <div class="field">
+                <label>IP / HOSTNAME</label>
+                <input id="cnHost" class="mono" placeholder="192.168.21.90" autocomplete="off">
+              </div>
+              <div class="field">
+                <label>CỔNG</label>
+                <input id="cnPort" class="mono" type="number" min="1" max="65535" value="80">
+              </div>
+              <div class="field">
+                <label>TÀI KHOẢN</label>
+                <input id="cnUser" class="mono" placeholder="admin" autocomplete="off">
+              </div>
+              <div class="field">
+                <label>MẬT KHẨU</label>
+                <input id="cnPass" class="mono" type="password" placeholder="••••••"
+                       autocomplete="new-password">
+                <span class="hint" id="cnPassHint">Bỏ trống = giữ mật khẩu đang dùng</span>
+              </div>
+            </div>
+            <div class="cn-foot">
+              <span class="cn-state" id="cnState">Chưa kiểm tra</span>
+              <div class="grow"></div>
+              <button class="btn" id="cnTest">Kiểm tra kết nối</button>
+              <button class="btn" id="cnSync">Đồng bộ camera</button>
+              <div class="vr"></div>
+              <button class="btn-cy" id="cnSave" style="padding:9px 16px">Lưu</button>
+            </div>
+            <div class="hint" style="padding:2px">Mật khẩu lưu dạng plaintext trong
+              aibox.conf.json — không commit file này vào git.</div>
+          </div>
+          <div class="card">
+            <div class="card-h">THUẬT TOÁN BOX ĐANG NẠP</div>
+            <div class="al-head">
+              <span class="hint">Please select scenario(s) or algorithm(s) as needed</span>
+              <div class="grow"></div>
+              <span class="al-cnt" id="alCnt">—</span>
+            </div>
+            <div class="al-grid" id="alGrid"></div>
+            <div class="al-foot">
+              <span class="hint" id="alHint">Box giới hạn 20 thuật toán nạp cùng lúc</span>
+              <div class="grow"></div>
+              <button class="btn" id="alWeb">Đổi trên web box ↗</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===== ADD MODAL ===== -->
+  <div class="overlay" id="modal" hidden>
+    <div class="modal">
+      <div class="m-head">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <span class="m-title">Thêm camera qua RTSP</span>
+          <span class="sub">PUT /api/streams · ghi thẳng vào go2rtc.yaml</span>
+        </div>
+        <div class="grow"></div>
+        <button class="m-x" id="mClose">✕</button>
+      </div>
+      <div class="m-body">
+        <div class="m-col">
+          <div class="field">
+            <label>URL RTSP</label>
+            <input id="mUrl" class="mono" placeholder="rtsp://admin:pass@192.168.21.178:554/ch01">
+            <span class="hint">Dấu '%' trần trong mật khẩu sẽ tự đổi thành %25</span>
+          </div>
+          <div class="field">
+            <label>TÊN LUỒNG</label>
+            <input id="mName" placeholder="cam178" pattern="[A-Za-z0-9_.\-]+">
+            <span class="hint">Chỉ chữ, số, _ . - · trùng tên là ghi đè luồng cũ</span>
+          </div>
+          <div class="field">
+            <label>MEDIA</label>
+            <div class="seg" id="mMedia" style="align-self:flex-start">
+              <button data-media="" class="on">Video + âm thanh</button>
+              <button data-media="video">Chỉ video</button>
+            </div>
+            <span class="hint">Chỉ video: bỏ track audio ngay ở nguồn RTSP</span>
+          </div>
+        </div>
+        <div class="m-col">
+          <div class="preview" id="mPrev"><span class="msg" id="mPrevMsg">Chưa kiểm tra · bấm "Kiểm tra kết nối"</span></div>
+          <div class="test-card">
+            <div class="card-h">KẾT QUẢ KIỂM TRA</div>
+            <div id="mRows"></div>
+          </div>
+          <button class="btn" id="mTest" style="justify-content:center;padding:11px 0">Kiểm tra kết nối</button>
+        </div>
+      </div>
+      <div class="m-foot">
+        <span class="hint" id="mHint">Luồng mới hiện ngay trong lưới Live</span>
+        <div class="grow"></div>
+        <button class="btn-gh" id="mCancel">Hủy</button>
+        <button class="btn-cy" id="mAdd" style="padding:10px 18px">Thêm vào hệ thống</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===== AI CONFIG PANEL ===== -->
+  <div class="overlay" id="aiWrap" hidden>
+    <div class="modal ai-modal">
+      <div class="m-head">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <span class="m-title">Cấu hình AI · <span id="aiTitle">—</span></span>
+          <span class="sub">/algo/list · /smart/update · /extend/update</span>
+        </div>
+        <div class="grow"></div>
+        <button class="m-x" id="aiClose">✕</button>
+      </div>
+      <div class="m-body ai-mbody">
+        <div class="ai-left">
+          <div class="ai-shot">
+            <img id="aiShot" alt="Ảnh camera để vẽ vùng phát hiện">
+            <canvas id="aiCv"></canvas>
+          </div>
+          <div class="ai-tools">
+            <div class="seg" id="aiUsage">
+              <button data-u="ROI" class="on">Vùng phân tích</button>
+              <button data-u="NotROI">Vùng che</button>
+            </div>
+            <div class="grow"></div>
+            <button class="btn" id="aiClear">Xoá vùng</button>
+          </div>
+          <span class="hint" id="aiHint">Chọn thuật toán trước khi vẽ vùng</span>
+          <span class="hint">Bấm trái thêm điểm · bấm phải bỏ điểm cuối · toạ độ 0~10000</span>
+        </div>
+        <div class="ai-right" id="aiBody"></div>
+      </div>
+      <div class="m-foot">
+        <span class="hint">Đã đọc cấu hình cũ và merge — /smart/update ghi đè cả list</span>
+        <div class="grow"></div>
+        <button class="btn-gh" id="aiCancel">Hủy</button>
+        <button class="btn-cy" id="aiSave" style="padding:10px 18px">Lưu cấu hình</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+</div>
+
+<template id="t-tile">
+  <div class="tile">
+    <div class="lines"></div>
+    <div class="scan"></div>
+    <div class="t-top">
+      <div class="t-id">
+        <div class="t-name"></div>
+        <div class="t-code"></div>
+      </div>
+      <span class="badge wait">…</span>
+    </div>
+    <div class="t-bot">
+      <span class="t-meta">—</span>
+      <div class="grow"></div>
+      <span class="t-note"></span>
+    </div>
+  </div>
+</template>
+
+<script type="module" src="ui.js"></script>

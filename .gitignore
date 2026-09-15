@@ -1,0 +1,80 @@
+# ===== Cấu hình nhạy cảm (KHÔNG đẩy lên) =====
+cams.json
+tg_groups.json
+aibox.conf.json
+def.json
+_chdetail.json
+_dp.json
+_extract.json
+_sc.json
+chl.json
+t_add.json
+algo_dump.json
+*.conf.json
+*.key
+*.pem
+.env
+.env.*
+
+# ===== Logs =====
+*.log
+*.out.log
+*.err.log
+
+# ===== Python cache / build =====
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+
+# ===== Electron build output (KHÔNG đưa binary vào git) =====
+electron-app/out*/
+electron-app/release*/
+electron-app/_test_build/
+electron-app/_trace_build/
+electron-app/node_modules/
+
+# ===== go2rtc binary + config =====
+go2rtc.exe
+go2rtc.yaml
+go2rtc.yaml.bak
+go2rtc*.log
+
+# ===== Ảnh cảnh báo camera =====
+alarms/
+
+# ===== Bundle / maintain tạm =====
+_boxui/
+_maintain/
+_maintain.tgz
+
+# ===== Media / binary lớn =====
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.tgz
+*.tar.gz
+
+# ===== File tạm / probe / test =====
+.probe_*
+_probe_*.py
+_getlog.py
+_pkg_test.log
+_portable*.log
+_builder_trace.log
+_apidoc.txt
+_frame_test.jpg
+_cap.js
+_cap.json
+_new.js
+_scroll_live.js
+_box_main.js
+t1.py
+d2.py
+d3.py
+d4.py
+d.txt
+c.txt

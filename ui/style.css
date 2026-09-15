@@ -1,0 +1,2007 @@
+/* Token lay 1:1 tu "Camera Monitoring.dc.html". Doi mau o day, khong rai trong JS. */
+:root{
+  --bg:#070a10; --head:#0c1119; --card:#101418; --card2:#12181e; --field:#131a24;
+  --bd:#1d242b; --bd2:#161c22; --bd3:#262f38; --bd4:#222a32; --hov:#182029;
+  --fg:#e6ebf0; --fg2:#c3ccd4; --dim:#8b9aa8; --ghost:#6b7a88;
+  --gold:#d9a233; --gold2:#eab748; --gold3:#c48a29;
+  --grad:linear-gradient(165deg,#e5bc63 0%,#d9a233 30%,#c48a29 58%,#a8722a 78%,#d19c33 100%);
+  --gradh:linear-gradient(165deg,#f0cd82 0%,#eab748 30%,#d69c34 58%,#bb833a 78%,#e5b74e 100%);
+  --teal:#5fe3d0; --ok:#3ddc97; --warn:#e8a020; --err:#ff4d4f; --err2:#ff7a7c;
+  --b:Barlow,system-ui,sans-serif; --m:'JetBrains Mono',monospace;
+  --sa:'Saira Condensed',var(--b);
+}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:var(--b);
+  -webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--gold);text-decoration:none}
+a:hover{color:var(--gold2)}
+button,input,select{font-family:inherit}
+[hidden]{display:none!important}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:#2a323b;border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+.nosb{scrollbar-width:none;-ms-overflow-style:none}
+.nosb::-webkit-scrollbar{display:none;width:0;height:0}
+.grow{flex:1}
+.vr{width:1px;height:20px;background:var(--bd4);margin:0 4px;flex:none}
+
+/* ---------- animation cua design ---------- */
+@keyframes omPulse{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes omToastIn{from{transform:translateX(-24px);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes omSheen{from{transform:translateX(-130%) skewX(-14deg)}to{transform:translateX(260%) skewX(-14deg)}}
+@keyframes omShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+@keyframes omViewIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes omAlertBorder{
+  0%,100%{border-color:rgba(255,77,79,.28);box-shadow:0 0 0 1px rgba(255,77,79,.12)}
+  50%{border-color:var(--err);box-shadow:0 0 0 2px rgba(255,77,79,.5),0 0 30px rgba(255,77,79,.3)}}
+@keyframes omSpin{to{transform:rotate(360deg)}}
+
+/* vet sang chay quanh vien khi hover: 4 canh, moi canh tre 0.9s -> chay vong */
+@keyframes omEdgeTop{
+  0%{left:-48%;opacity:1} 25%{left:52%;opacity:1} 42%{left:100%;opacity:1}
+  42.01%{left:100%;opacity:0} 100%{left:100%;opacity:0}}
+@keyframes omEdgeRight{
+  0%{top:-48%;opacity:1} 25%{top:52%;opacity:1} 42%{top:100%;opacity:1}
+  42.01%{top:100%;opacity:0} 100%{top:100%;opacity:0}}
+@keyframes omEdgeBottom{
+  0%{left:100%;opacity:1} 25%{left:0%;opacity:1} 42%{left:-48%;opacity:1}
+  42.01%{left:-48%;opacity:0} 100%{left:-48%;opacity:0}}
+@keyframes omEdgeLeft{
+  0%{top:100%;opacity:1} 25%{top:0%;opacity:1} 42%{top:-48%;opacity:1}
+  42.01%{top:-48%;opacity:0} 100%{top:-48%;opacity:0}}
+
+[data-edge]{position:absolute;opacity:0;z-index:5;pointer-events:none;
+  box-shadow:0 0 10px rgba(255,227,163,.55)}
+[data-edge="top"]{left:-48%;top:0;width:48%;height:2px;
+  background:linear-gradient(90deg,transparent,#ffe3a3,transparent)}
+[data-edge="right"]{left:calc(100% - 2px);top:-48%;width:2px;height:48%;
+  background:linear-gradient(180deg,transparent,#ffe3a3,transparent)}
+[data-edge="bottom"]{left:100%;top:calc(100% - 2px);width:48%;height:2px;
+  background:linear-gradient(270deg,transparent,#ffe3a3,transparent)}
+[data-edge="left"]{left:0;top:100%;width:2px;height:48%;
+  background:linear-gradient(0deg,transparent,#ffe3a3,transparent)}
+[data-rim]:hover [data-edge="top"]{animation:omEdgeTop 3.6s linear infinite}
+[data-rim]:hover [data-edge="right"]{animation:omEdgeRight 3.6s linear .9s infinite}
+[data-rim]:hover [data-edge="bottom"]{animation:omEdgeBottom 3.6s linear 1.8s infinite}
+[data-rim]:hover [data-edge="left"]{animation:omEdgeLeft 3.6s linear 2.7s infinite}
+[data-rim]:hover{border-color:var(--gold3)!important;
+  box-shadow:0 0 0 1px rgba(196,138,41,.35),0 10px 26px rgba(0,0,0,.45)}
+
+/* sheen: vet sang chay qua nut vang khi hover */
+[data-sheen]{position:relative;overflow:hidden}
+[data-sheen]::before{content:'';position:absolute;top:0;bottom:0;left:0;width:38%;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);
+  transform:translateX(-130%) skewX(-14deg);pointer-events:none;opacity:0}
+[data-sheen]:hover::before{opacity:1;animation:omSheen .5s ease-out}
+
+/* ---------- shell ---------- */
+#app{height:100vh;min-height:600px;display:flex;flex-direction:column;overflow:hidden}
+header{flex:none;display:flex;align-items:center;gap:18px;padding:0 18px;height:70px;
+  background:var(--head);border-bottom:1px solid var(--bd)}
+.logo{width:54px;height:54px;flex:none;
+  background:url(assets/logo-app.png) center/contain no-repeat}
+.brand{font:900 26px/1 var(--sa);letter-spacing:.04em;text-transform:uppercase;color:#fff;
+  white-space:nowrap}
+.brand-sub{font:700 13px/1 var(--sa);color:var(--gold);letter-spacing:.14em;
+  text-transform:uppercase;white-space:nowrap}
+.chip{display:flex;align-items:center;gap:7px;background:var(--field);border:1px solid var(--bd3);
+  border-radius:5px;padding:6px 10px;flex:none}
+.chip .k{font:400 9.5px/1 var(--m);color:var(--ghost);letter-spacing:.08em}
+.chip .v{font:600 11.5px/1 var(--b);color:var(--gold)}
+/* Neo giua thanh theo CHIEU RONG HEADER, khong theo cac phan tu ben canh:
+   dat trong luong flex thi nav xe dich moi khi ten camera / trang thai box doi do dai. */
+nav{position:absolute;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:4px;flex:none}
+nav button{position:relative;width:38px;height:38px;display:grid;place-items:center;
+  background:transparent;border:none;border-radius:7px;cursor:pointer;padding:0}
+nav button:hover{background:var(--hov)}
+nav button.on{background:var(--hov)}
+nav button svg{width:20px;height:20px;stroke:var(--ghost);fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+nav button.on svg{stroke:var(--gold)}
+nav .badge{position:absolute;top:3px;right:3px;min-width:15px;height:15px;padding:0 3px;
+  border-radius:8px;background:var(--err);color:#fff;font:600 9px/15px var(--m);text-align:center}
+.stat{display:flex;align-items:center;gap:7px;font:500 11px/1 var(--b);color:var(--dim);flex:none}
+.stat .dot{width:7px;height:7px;border-radius:50%;background:var(--ghost);flex:none}
+#clock{font:500 12.5px/1 var(--m);color:var(--fg2);flex:none}
+.avatar{width:31px;height:31px;border-radius:50%;background:var(--field);border:1px solid var(--bd3);
+  display:grid;place-items:center;font:600 11px/1 var(--b);color:var(--gold);flex:none}
+.body{flex:1;display:flex;min-height:0}
+main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.view{flex:1;display:flex;flex-direction:column;min-height:0}
+
+/* ---------- bar / scroll ---------- */
+.bar{flex:none;display:flex;align-items:center;gap:10px;padding:12px 18px;
+  border-bottom:1px solid var(--bd2)}
+.h1{font:600 15px/1 var(--b)}
+.sub{font:400 11px/1 var(--m);color:var(--gold)}
+.sub.q{color:var(--ghost)}
+.scroll{flex:1;overflow:auto;padding:14px 18px 22px;
+  animation:omViewIn .3s cubic-bezier(.2,.8,.2,1) both}
+
+/* ---------- nut ---------- */
+.btn{display:flex;align-items:center;gap:7px;font:500 11.5px/1 var(--b);color:var(--dim);
+  background:var(--field);border:1px solid var(--bd3);border-radius:5px;padding:7px 11px;
+  cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--gold3);color:var(--gold2)}
+.btn.on{color:var(--gold);border-color:var(--gold3)}
+.btn-cy{display:flex;align-items:center;gap:7px;font:600 11.5px/1 var(--b);color:#08090b;
+  background:var(--grad);border:none;border-radius:5px;padding:7px 12px;cursor:pointer;
+  white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,255,255,.24),
+  inset 0 -1px 0 rgba(0,0,0,.2),0 1px 3px rgba(0,0,0,.5)}
+.btn-cy:hover{background:var(--gradh)}
+.btn-cy:disabled,.btn:disabled{opacity:.5;cursor:progress}
+.hint code{font:400 10px/1 var(--m);color:var(--fg2)}
+.btn-gh{background:transparent;border:1px solid var(--bd3);color:var(--dim);border-radius:5px;
+  padding:7px 12px;font:500 11.5px/1 var(--b);cursor:pointer}
+.btn-gh:hover{color:var(--fg2)}
+.btn-del:hover{border-color:var(--err);color:var(--err2)}
+.ico{width:28px;height:28px;display:grid;place-items:center;border-radius:5px;cursor:pointer;
+  flex:none}
+.ico:hover{background:var(--hov)}
+.ico.rm:hover{background:#241a1c}
+.ico svg{width:16px;height:16px;fill:none;stroke:var(--dim);stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.ico.gold svg{stroke:var(--gold)}
+.seg{display:flex;background:var(--field);border:1px solid var(--bd3);border-radius:5px;
+  overflow:hidden;flex:none}
+.seg button{background:transparent;border:none;color:var(--ghost);font:500 11px/1 var(--b);
+  padding:7px 11px;cursor:pointer}
+.seg button.on{background:var(--hov);color:var(--gold)}
+
+/* ---------- drop menu (loc) ---------- */
+.drop{position:relative;flex:none}
+.menu{position:absolute;top:calc(100% + 6px);right:0;z-index:70;min-width:180px;
+  background:var(--card2);border:1px solid var(--bd3);border-radius:7px;
+  box-shadow:0 14px 34px rgba(0,0,0,.6);padding:5px}
+.menu .mrow{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:5px;
+  cursor:pointer}
+.menu .mrow:hover{background:var(--hov)}
+.menu .mrow.on{background:var(--hov)}
+.menu .mrow .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.menu .mrow .l{flex:1;font:500 11.5px/1 var(--b);color:var(--dim);white-space:nowrap}
+.menu .mrow.on .l{color:var(--gold)}
+.menu .mrow .k{font:400 10px/1 var(--m);color:var(--ghost)}
+.msep{height:1px;background:var(--bd4);margin:5px 0}
+
+/* ---------- LIVE grid ---------- */
+#grid{display:grid;gap:12px}
+.tile{position:relative;aspect-ratio:16/9;overflow:hidden;background:#101418;
+  border:1px solid var(--bd);border-radius:8px;cursor:pointer;transition:border-color .18s ease}
+/* overflow:hidden GIU nguyen nhu design: vet sang chay SAT TRONG vien, khong tran ra. */
+.tile.alert{animation:omAlertBorder 1.1s ease-in-out infinite}
+.tile.detect{animation:omAlertBorder .9s ease-in-out infinite}
+.tile video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  border-radius:8px;background:#0a0d12}
+.tile video-stream{position:absolute;inset:0;border-radius:8px;overflow:hidden}
+.t-top{position:absolute;top:9px;left:10px;right:10px;display:flex;align-items:flex-start;gap:8px}
+.t-id{flex:1;min-width:0}
+.t-name{font:600 12px/1.25 var(--b);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t-code{font:400 9.5px/1.3 var(--m);color:#b9c4cd;text-shadow:0 1px 3px rgba(0,0,0,.8);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{flex:none;font:600 9px/1 var(--m);letter-spacing:.06em;padding:4px 6px;border-radius:3px;
+  background:rgba(61,220,151,.16);color:var(--ok);border:1px solid rgba(61,220,151,.3)}
+.badge.wait{background:rgba(232,160,32,.16);color:var(--warn);border-color:rgba(232,160,32,.3)}
+.badge.off{background:rgba(255,77,79,.16);color:var(--err2);border-color:rgba(255,77,79,.32)}
+/* Đếm người trong vùng (AreaRuleData) — con số real-time, không phải cảnh báo */
+.badge.t-area{background:rgba(95,227,208,.14);color:var(--teal);border-color:rgba(95,227,208,.32)}
+.t-bot{position:absolute;bottom:8px;left:10px;right:10px;display:flex;align-items:center;gap:8px}
+.t-meta,.t-note{font:500 9.5px/1 var(--m);color:#b9c4cd;text-shadow:0 1px 3px rgba(0,0,0,.8);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.empty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;gap:9px;
+  padding:60px 0;color:var(--ghost)}
+.empty .plus{font:300 34px/1 var(--m);color:var(--bd3)}
+.empty .t{font:500 12.5px/1 var(--b)}
+.pager{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 0 0}
+.pager .mid{display:flex;align-items:center;gap:10px}
+.pg{width:27px;height:27px;background:var(--field);border:1px solid var(--bd3);border-radius:5px;
+  color:var(--dim);font:500 11px/1 var(--m);cursor:pointer}
+.pg.on{background:var(--grad);color:#08090b;border-color:transparent}
+.dis{opacity:.4;pointer-events:none}
+.range{font:400 10.5px/1 var(--m);color:var(--ghost)}
+
+/* ---------- DETAIL ---------- */
+.split{flex:1;display:flex;min-height:0}
+.stage-wrap{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;
+  padding:14px 12px 14px 18px;gap:10px}
+.stage{position:relative;flex:1;min-height:0;background:#0a0d12;border:1px solid var(--bd);
+  border-radius:9px;overflow:hidden}
+.stage video-stream,.stage video{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:contain;border-radius:9px}
+/* z-index 4: PHAI cao hon .vod-v (2) va .vod-msg (3), neu khong clip xem lai se
+   che mat nut LIVE -> khong con duong quay ve luong truc tiep. */
+.s-top{position:absolute;z-index:4;top:11px;left:13px;right:13px;display:flex;
+  align-items:center;gap:9px}
+.s-bot{position:absolute;z-index:4;bottom:11px;left:13px;right:13px;display:flex;
+  align-items:center;gap:8px}
+.s-bot button{width:31px;height:31px;background:rgba(8,11,16,.72);border:1px solid var(--bd3);
+  border-radius:6px;color:var(--fg2);cursor:pointer;font-size:12px}
+.s-bot button:hover{border-color:var(--gold3);color:var(--gold2)}
+.live{display:flex;align-items:center;gap:6px;font:600 9.5px/1 var(--m);color:var(--ok);
+  background:rgba(8,11,16,.72);padding:5px 8px;border-radius:4px;letter-spacing:.06em}
+.live .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);
+  animation:omPulse 1.6s ease-in-out infinite}
+.qual{font:400 10px/1 var(--m);color:#b9c4cd;background:rgba(8,11,16,.72);padding:5px 8px;
+  border-radius:4px}
+aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direction:column;
+  gap:10px;overflow:auto}
+.card{background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:11px 13px;
+  display:flex;flex-direction:column;gap:9px}
+.card-h{font:600 9.5px/1 var(--m);letter-spacing:.1em;color:var(--gold);text-transform:uppercase}
+.row{display:flex;align-items:center;gap:9px;justify-content:space-between}
+.rk{font:500 11px/1.3 var(--b);color:var(--ghost);flex:none}
+.rv{font:500 11px/1.3 var(--m);color:var(--fg2);text-align:right;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rv.ok{color:var(--ok)} .rv.warn{color:var(--warn)} .rv.err{color:var(--err2)}
+.rv.dim{color:var(--ghost)} .rv.none{color:var(--bd3)}
+
+/* lich su canh bao duoi stream */
+.hist-bar{flex:none;height:150px;box-sizing:border-box;background:var(--card2);
+  border:1px solid var(--bd);border-radius:8px;
+  padding:9px 11px;display:flex;flex-direction:column;gap:8px}
+.hist-h{display:flex;align-items:center;gap:9px}
+.hist-t{font:600 9.5px/1 var(--m);letter-spacing:.1em;color:var(--gold)}
+.hist-n{font:400 10px/1 var(--m);color:var(--ghost)}
+.hist-list{flex:1;min-height:0;display:flex;align-items:flex-start;gap:8px;
+  overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
+.h-item{flex:none;width:132px;border:1px solid var(--bd3);border-radius:6px;overflow:hidden;
+  cursor:pointer;background:var(--card)}
+.h-item:hover{border-color:var(--gold3)}
+.h-item.on{border-color:var(--gold)}
+.h-item img{width:100%;height:74px;object-fit:cover;display:block;background:#0a0d12}
+.h-noimg{width:100%;height:74px;display:grid;place-items:center;font:400 9px/1 var(--m);
+  color:var(--bd3)}
+.h-meta{padding:5px 6px;display:flex;flex-direction:column;gap:2px}
+.h-algo{font:500 10px/1.25 var(--b);color:var(--fg2);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.h-time{font:400 9px/1 var(--m);color:var(--ghost)}
+.h-none{font:400 10.5px/1 var(--m);color:var(--bd3);padding:6px 2px}
+
+/* ---------- CAMERA table (7 cot) ---------- */
+.tbl{display:flex;flex-direction:column;min-width:820px}
+.thead,.trow{display:grid;gap:10px;align-items:center;
+  grid-template-columns:56px minmax(150px,1.3fr) minmax(96px,.8fr) minmax(180px,1.6fr) 74px 92px 104px}
+.thead{padding:0 11px 8px;border-bottom:1px solid var(--bd4)}
+.thead span{font:600 9.5px/1 var(--m);letter-spacing:.09em;color:var(--ghost);text-transform:uppercase}
+.trow{padding:10px 11px;border-bottom:1px solid var(--bd2);cursor:pointer}
+.trow:hover{background:#0d131b}
+.c-id{font:600 11.5px/1 var(--m);color:var(--gold)}
+.c-nm{font:500 12.5px/1.3 var(--b);color:var(--fg);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.c-md{font:400 10px/1.3 var(--m);color:var(--ghost);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.c-zone,.c-url,.c-lat{font:400 10.5px/1.3 var(--m);color:var(--dim);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.c-url{color:var(--ghost)}
+.c-st{display:flex;align-items:center;gap:6px;font:600 9.5px/1 var(--m);color:var(--ok);
+  letter-spacing:.05em}
+.c-st .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
+.c-st.off{color:var(--err2)} .c-st.off .dot{background:var(--err)}
+.c-act{display:flex;align-items:center;gap:3px;justify-content:flex-end}
+.c-algos{margin-top:3px;font:400 10px/1.3 var(--m);color:rgba(213,194,149,.8);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-tag{font:500 9px/1 var(--m);color:var(--gold);background:rgba(217,162,51,.12);
+  border:1px solid rgba(217,162,51,.28);border-radius:3px;padding:3px 5px;white-space:nowrap}
+.c-none{font:400 9.5px/1 var(--m);color:var(--bd3)}
+
+/* Ket qua Auto Search: nam trong cung scroll voi bang camera, khong phu len luoi. */
+.discover-box{margin:0 0 14px;border:1px solid var(--bd3);border-radius:6px;overflow:hidden;
+  background:var(--card)}
+.d-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,.45fr) auto;gap:10px;
+  align-items:center;padding:8px 11px;border-bottom:1px solid var(--bd2)}
+.d-row:last-child{border-bottom:0}
+.d-ip{font:600 11px/1 var(--m);color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d-mf{font:400 10px/1 var(--m);color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d-add{justify-self:end}
+
+/* ---------- LOG: timeline 3 cot (thoi gian | cham moc | su kien) ---------- */
+.tl-day{display:flex;align-items:center;gap:11px;padding:0 2px 12px}
+.tl-day .d{font:700 10.5px/1 var(--b);letter-spacing:.16em;text-transform:uppercase;
+  color:#7d8a97;white-space:nowrap}
+.tl-day .ln{flex:1;height:1px;background:#171e25}
+.tl{display:flex;flex-direction:column;padding-left:16px}
+.tl-row{--tl-anchor:29px;display:grid;grid-template-columns:82px 26px minmax(0,1fr);
+  align-items:stretch;cursor:pointer;border-radius:9px;transition:background .18s ease}
+.tl-row:hover{background:#0d131b}
+.tl-t{display:flex;align-items:baseline;justify-content:flex-end;gap:1px;
+  padding:calc(var(--tl-anchor) - 8px) 0 15px 4px}
+.tl-hm{font:500 16px/1 var(--m);color:#c9d4de}
+.tl-sec{font:400 12px/1 var(--m);color:#5c6a77}
+/* cot giua: duong ke doc chay suot + cham moc tron */
+.tl-mid{position:relative;display:flex;justify-content:center}
+.tl-mid .ln{width:1px;background:#1b232b}
+.tl-dot{position:absolute;top:calc(var(--tl-anchor) - 6px);width:12px;height:12px;border-radius:50%;
+  box-shadow:0 0 0 3px var(--bg),0 0 10px currentColor}
+.tl-b{display:flex;align-items:center;gap:17px;padding:12px 0 12px 18px;
+  border-bottom:1px solid #12181f;min-width:0}
+.tl-th{position:relative;flex:none;width:160px;aspect-ratio:16/9;border-radius:6px;
+  overflow:hidden;background:#0a0d12}
+.tl-th img{width:100%;height:100%;object-fit:cover;display:block}
+.tl-th .sc{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.04) 0 1px,transparent 1px 3px)}
+.tl-th .cam{position:absolute;bottom:6px;left:7px;font:500 11px/1 var(--m);color:#fff;
+  text-shadow:0 1px 2px #000}
+.tl-th .no{position:absolute;inset:0;display:grid;place-items:center;font:400 9.5px/1 var(--m);
+  color:var(--bd3)}
+.tl-mn{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.tl-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tl-kind{font:700 11px/1 var(--m);letter-spacing:.1em;background:rgba(255,255,255,.03);
+  border:1px solid;border-radius:99px;padding:6px 11px;white-space:nowrap}
+.tl-new{font:700 9px/1 var(--m);letter-spacing:.08em;color:#fff;background:var(--err);
+  border-radius:99px;padding:5px 8px;white-space:nowrap}
+.tl-ttl{font:600 17px/1.25 var(--b);color:var(--fg);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tl-sub{font:400 12px/1.3 var(--m);color:#7d8a97;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tl-r{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px;padding-right:4px}
+.tl-conf{font:600 11.5px/1 var(--m)}
+.tl-bar{width:64px;height:3px;border-radius:2px;background:#1b232b;overflow:hidden}
+.tl-bar i{display:block;height:100%}
+.tl-more{font:500 13px/1 var(--b);color:#8a6a2c;white-space:nowrap}
+
+/* ---------- SETTINGS ---------- */
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label{font:600 9.5px/1 var(--m);letter-spacing:.08em;color:var(--ghost);text-transform:uppercase}
+.field input,.field select{background:var(--field);border:1px solid var(--bd3);border-radius:5px;
+  padding:8px 10px;color:var(--fg);font:500 12px/1 var(--b);outline:none;min-width:0}
+.field input.mono{font-family:var(--m);font-size:11.5px}
+.field input:focus,.field select:focus{border-color:var(--gold3)}
+.hint{font:400 10px/1.4 var(--m);color:var(--ghost)}
+.cn-foot,.al-foot{display:flex;align-items:center;gap:9px;padding-top:3px;flex-wrap:wrap}
+.cn-state{font:500 11px/1 var(--m);color:var(--ghost)}
+.cn-state.ok{color:var(--ok)} .cn-state.err{color:var(--err2)}
+
+/* chon 20 thuat toan, nhom theo Algorithm Function */
+.al-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.al-cnt{font:500 11px/1 var(--m);color:var(--gold)}
+.al-cnt.full{color:var(--warn)}
+/* Bang 2 cot: trai = Category, phai = Algorithm Function. Cot trai dat WIDTH CO DINH
+   (khong phai minmax/fr) vi moi .al-cat la mot grid rieng — chi width co dinh moi canh
+   thang cot giua cac hang va voi hang tieu de .al-thead nam ngoai #alCats. */
+#alCats{border:1px solid var(--bd3);border-top:none;border-radius:0 0 6px 6px;
+  overflow:hidden}
+.al-thead{display:grid;grid-template-columns:200px 1fr;background:var(--card2);
+  border:1px solid var(--bd3);border-radius:6px 6px 0 0;border-bottom:none;
+  /* .card la flex column co gap:9px -> thead va #alCats la 2 flex item bi day roi
+     nhau. Trieu tieu dung gap de hai nua ghep thanh mot khung lien. */
+  margin-bottom:-9px}
+.al-thead>span{padding:8px 11px;font:600 10px/1 var(--b);letter-spacing:.08em;
+  color:var(--ghost);text-transform:uppercase}
+.al-thead>span:first-child{border-right:1px solid var(--bd3)}
+.al-cat{display:grid;grid-template-columns:200px 1fr;border-top:1px solid var(--bd3)}
+.al-cat-h{display:flex;flex-direction:column;justify-content:center;gap:4px;
+  padding:9px 11px;background:var(--card2);border-right:1px solid var(--bd3)}
+.al-cat-n{font:600 11.5px/1.3 var(--b);color:var(--fg2)}
+.al-cat-c{font:400 9.5px/1 var(--m);color:var(--ghost)}
+.al-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:6px;
+  padding:8px 9px;min-width:0}
+.al-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--field);
+  border:1px solid var(--bd3);border-radius:5px;cursor:pointer;min-width:0}
+.al-item:hover{border-color:var(--gold3)}
+
+.al-item.on{border-color:var(--gold);background:rgba(217,162,51,.09)}
+.al-item.dis{opacity:.42;cursor:not-allowed}
+.al-box{width:13px;height:13px;border-radius:3px;border:1px solid var(--bd3);flex:none;
+  display:grid;place-items:center}
+.al-item.on .al-box{background:var(--gold);border-color:var(--gold)}
+.al-item.on .al-box::after{content:'';width:7px;height:4px;border-left:1.6px solid #08090b;
+  border-bottom:1.6px solid #08090b;transform:rotate(-45deg) translate(1px,-1px)}
+.al-nm{font:400 11.5px/1.3 var(--b);color:var(--dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.al-item.on .al-nm{color:var(--fg)}
+.al-load{font:400 11px/1.5 var(--m);color:var(--ghost);padding:10px 2px}
+
+/* ---------- toast: 1:1 theo design Live Apple ----------
+   Mot popup duy nhat, anh 16/9 tren cung voi pill canh bao goc phai, 4 vet sang
+   chay vien (data-edge-alert), nut vang "Xem camera" + nut kinh "Bo qua". */
+#toasts{position:fixed;left:28px;bottom:24px;z-index:60;width:480px}
+.toast{position:relative;border-radius:22px;overflow:hidden;
+  animation:omToastIn .28s ease-out}
+.t-gloss{position:absolute;top:0;left:0;right:0;height:54%;pointer-events:none;z-index:1;
+  background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0))}
+.t-shot{position:relative;aspect-ratio:16/9;background:#08090b center/cover no-repeat;overflow:hidden}
+.t-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:pointer}
+.t-scrim{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.65))}
+.t-badge{position:absolute;top:10px;right:12px;z-index:2;display:flex;align-items:center;gap:6px;
+  border-radius:99px;padding:5px 10px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  box-shadow:0 0 0 0 rgba(255,69,58,.55),0 4px 12px rgba(214,44,34,.4);
+  animation:aAlertGlow 1.8s ease-out infinite}
+.t-badge svg{width:11px;height:11px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+.t-badge b{font:800 10px/1 var(--b);letter-spacing:.02em;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.t-body{position:relative;padding:14px 16px 16px;display:flex;flex-direction:column;gap:12px}
+.t-row1{display:flex;align-items:center;gap:10px}
+.t-tt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t-ttl{font:700 15px/1.25 var(--b);color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t-sub{font:400 12px/1.3 var(--b);color:rgba(255,255,255,.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t-time{flex:none;font:400 12px/1.3 var(--b);color:rgba(255,255,255,.55);white-space:nowrap}
+.t-acts{display:flex;gap:9px}
+.t-acts .go{flex:1;border-radius:13px;padding:11px 0;font:600 13px/1 var(--b)}
+.t-acts .skip{flex:none;border-radius:13px;padding:11px 16px;cursor:pointer;
+  font:600 13px/1 var(--b);color:rgba(255,255,255,.88);
+  background:linear-gradient(168deg,rgba(255,255,255,.14),rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 6px 16px rgba(0,0,0,.3);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  transition:transform .14s ease,filter .16s ease,border-color .16s ease}
+.t-acts .skip:hover{color:#fff;border-color:rgba(213,194,149,.42)}
+
+/* ---------- overlay / modal ---------- */
+.overlay{position:fixed;inset:0;z-index:150;background:rgba(4,6,10,.72);display:grid;
+  place-items:center;padding:24px}
+.modal{width:min(880px,100%);max-height:100%;display:flex;flex-direction:column;
+  background:var(--card2);border:1px solid var(--bd3);border-radius:9px;overflow:hidden;
+  box-shadow:0 16px 40px rgba(0,0,0,.68)}
+.m-head{flex:none;display:flex;align-items:center;gap:10px;padding:13px 16px;
+  border-bottom:1px solid var(--bd2)}
+.m-title{font:600 14px/1 var(--b)}
+.m-x{background:none;border:none;color:var(--ghost);cursor:pointer;font-size:14px}
+.m-x:hover{color:var(--fg2)}
+.m-body{flex:1;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px}
+.m-col{display:flex;flex-direction:column;gap:11px;min-width:0}
+.m-foot{flex:none;display:flex;align-items:center;gap:9px;padding:12px 16px;
+  border-top:1px solid var(--bd2)}
+.preview{background:#0a0d12;border:1px solid var(--bd3);border-radius:8px;display:grid;
+  place-items:center;aspect-ratio:16/9;overflow:hidden}
+.preview .msg{font:400 10.5px/1.4 var(--m);color:var(--ghost);text-align:center;padding:0 12px}
+@media (max-width:760px){.m-body{grid-template-columns:1fr}}
+
+/* ---------- xem lai clip: chieu tren chinh khung stage ---------- */
+.vod-v{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+  background:#000;z-index:2}
+.vod-msg{position:absolute;inset:0;z-index:3;display:grid;place-items:center;
+  pointer-events:none;font:400 11.5px/1.5 var(--m);color:var(--dim);text-align:center;
+  padding:0 30px;background:rgba(4,6,10,.55)}
+.vod-msg.err{color:var(--err2)}
+/* Nut play/mute/fullscreen cua luong live vo nghia khi dang xem clip, va no nam
+   dung cho controls cua <video> -> an di trong luc xem lai. */
+#stage:has(.vod-v) .s-bot{display:none}
+/* Dang XEM LAI: xam, cham khong nhay, bam duoc de ve luong truc tiep.
+   Dang LIVE: xanh + cham nhay (mac dinh .live o tren). */
+#dLive.back{color:var(--dim);cursor:pointer}
+#dLive.back .dot{background:var(--ghost);animation:none}
+#dLive.back:hover{color:var(--gold2)}
+#dLive.back:hover .dot{background:var(--gold)}
+/* Luong live chua len hinh -> mo di, nhung KHONG duoc de opacity inline de con
+   phan biet duoc voi trang thai xem lai. */
+#dLive.wait{opacity:.35}
+.h-item .h-play{position:absolute;inset:0;display:grid;place-items:center;
+  background:rgba(4,6,10,.42);opacity:0;transition:opacity .15s ease;pointer-events:none}
+.h-item{position:relative}
+.h-item:hover .h-play{opacity:1}
+.h-play span{width:22px;height:22px;border-radius:50%;background:rgba(217,162,51,.92);
+  color:#08090b;display:grid;place-items:center;font-size:9px;padding-left:2px}
+.tl-row .tl-th{position:relative}
+.tl-th .tl-play{position:absolute;inset:0;display:grid;place-items:center;
+  background:rgba(4,6,10,.38);opacity:0;transition:opacity .15s ease}
+.tl-row:hover .tl-th .tl-play{opacity:1}
+.tl-play span{width:26px;height:26px;border-radius:50%;background:rgba(217,162,51,.92);
+  color:#08090b;display:grid;place-items:center;font-size:10px;padding-left:2px}
+
+/* ---------- CAU HINH AI: layout 1:1 theo design ---------- */
+.ai-wrap{flex:1;min-height:0;overflow:auto;padding:14px 18px 18px;display:flex;
+  flex-direction:column;animation:omViewIn .3s cubic-bezier(.2,.8,.2,1) both}
+
+/* tab tung thuat toan dang bat tren camera nay */
+.fn-tabs{flex:none;display:flex;align-items:center;gap:2px;flex-wrap:wrap;
+  border-bottom:1px solid #1b222a;margin-bottom:16px}
+.fn-tab{display:flex;align-items:center;gap:10px;padding:11px 15px;margin-bottom:-1px;
+  border:none;border-bottom:2px solid transparent;background:transparent;
+  border-radius:7px 7px 0 0;cursor:pointer;white-space:nowrap;transition:background .16s ease}
+.fn-tab .d{width:7px;height:7px;border-radius:50%;background:#38424c;flex:none}
+.fn-tab .l{font:600 12.5px/1 var(--b);color:var(--dim)}
+.fn-tab .x{font:400 12px/1 var(--m);color:#4a5764}
+.fn-tab .x:hover{color:var(--err2)}
+.fn-tab.on{border-bottom-color:var(--gold);background:var(--field)}
+.fn-tab.on .d{background:var(--gold)}
+.fn-tab.on .l{color:var(--gold)}
+.fn-add{display:flex;align-items:center;gap:7px;margin:0 0 3px 8px;padding:8px 12px;
+  border-radius:7px;background:var(--field);border:1px dashed #2a333c;color:var(--gold);
+  cursor:pointer;white-space:nowrap}
+.fn-add:hover{border-color:var(--gold3)}
+.fn-add .p{font:500 14px/1 var(--m)}
+.fn-add .t{font:600 11.5px/1 var(--b)}
+.fn-none{font:400 11px/1 var(--m);color:var(--ghost);padding:11px 4px}
+
+.ai-cols{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 386px;gap:16px}
+.ai-left{display:flex;flex-direction:column;gap:12px;min-width:0}
+
+/* anh + canvas ve vung */
+.ai-shot{position:relative;aspect-ratio:16/9;background:#0a0d12;border:1px solid var(--bd);
+  border-radius:9px;overflow:hidden}
+/* #aiShot la khung chua <video-stream> (stream song), khong con <img> */
+.ai-shot #aiShot{position:absolute;inset:0}
+.ai-shot video-stream,.ai-shot video-stream video{width:100%;height:100%;display:block}
+.ai-shot video-stream video{object-fit:contain;background:#0a0d12}
+/* Con tro do JS dat theo mode (mac dinh 'default', 'crosshair' khi dang ve).
+   De crosshair o day thi luc KHONG ve chuot van la dau cong. */
+.ai-shot canvas{position:absolute;inset:0;width:100%;height:100%;cursor:default}
+.ai-shot-top{position:absolute;top:11px;left:13px;display:flex;align-items:center;gap:8px;
+  pointer-events:none}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);
+  animation:omPulse 1.6s ease-in-out infinite}
+.ai-q{font:500 10px/1 var(--m);color:#c9d4de;background:rgba(8,10,13,.7);padding:6px 9px;
+  border-radius:99px}
+.ai-tools{flex:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* danh sach vung da ve */
+.zone-list{display:flex;flex-direction:column;gap:7px}
+.zone{display:flex;align-items:center;gap:11px;background:var(--head);border:1px solid var(--bd);
+  border-radius:8px;padding:10px 12px}
+.zone .sw{width:9px;height:9px;border-radius:2px;flex:none}
+.zone .nm{font:600 12px/1 var(--b);color:var(--fg);white-space:nowrap}
+.zone .mt{font:400 10.5px/1 var(--m);color:#7d8a97;white-space:nowrap}
+.zone .act{font:500 11px/1 var(--b);color:var(--dim);cursor:pointer;white-space:nowrap;
+  background:none;border:none;padding:0}
+.zone .act:hover{color:var(--gold2)}
+.zone .act.rm:hover{color:var(--err2)}
+/* Vung dang duoc chon: to dam o day VA dam net tren anh (draw() dung P.pick) */
+.zone{cursor:pointer}
+.zone.on{border-color:var(--gold3);background:var(--hov)}
+.zone.on .nm{color:var(--gold2)}
+.zone-none{font:400 10.5px/1.5 var(--m);color:var(--bd3);padding:4px 2px}
+
+/* cot phai: 3 tab con */
+.ai-right{display:flex;flex-direction:column;background:var(--head);border:1px solid var(--bd);
+  border-radius:9px;overflow:hidden;min-width:0}
+.cfg-tabs{flex:none;display:flex;align-items:center;gap:4px;padding:9px 8px;
+  border-bottom:1px solid #171e25;overflow-x:auto}
+.cfg-tabs button{flex:none;padding:8px 10px;border-radius:6px;background:transparent;border:none;
+  cursor:pointer;white-space:nowrap;font:600 11px/1 var(--b);color:var(--dim)}
+.cfg-tabs button.on{background:var(--grad);color:#08090b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 1px 3px rgba(0,0,0,.5)}
+.cfg-pane{flex:1;min-height:0;overflow:auto;padding:14px}
+
+/* nhom truong trong tab con */
+.cfg-h{font:700 10px/1 var(--b);letter-spacing:.16em;text-transform:uppercase;color:var(--ghost);
+  margin-bottom:12px}
+.cfg-sep{height:1px;background:#171e25;margin:16px 0 14px}
+.cfg-rows{display:flex;flex-direction:column;gap:12px}
+.cfg-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}
+.cfg-lb{display:flex;flex-direction:column;gap:3px;min-width:0}
+.cfg-lb .l{font:500 12px/1.3 var(--b);color:#c9d4de}
+.cfg-lb .h{font:400 10px/1.3 var(--m);color:#5c6a77}
+/* o so co nut -/+ thay vi thanh truot */
+.spin{display:flex;align-items:center;border:1px solid var(--bd3);border-radius:6px;
+  overflow:hidden;background:var(--field);flex:none}
+.spin button{width:28px;height:32px;display:grid;place-items:center;font:500 14px/1 var(--m);
+  color:var(--dim);cursor:pointer;user-select:none;background:none;border:none}
+.spin button:hover{color:var(--gold2);background:var(--hov)}
+.spin .v{min-width:44px;text-align:center;font:500 11.5px/1 var(--m);color:var(--fg);
+  padding:9px 2px;background:none;border:none;outline:none}
+.cfg-sz{display:flex;flex-direction:column;gap:10px}
+.cfg-sz-g{display:flex;flex-direction:column;gap:7px}
+.cfg-sz-g>.l{font:500 11.5px/1 var(--b);color:#c9d4de}
+.cfg-sz-r{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.cfg-ax{display:flex;align-items:center;gap:8px;min-width:0}
+.cfg-ax>.a{font:400 10.5px/1 var(--m);color:var(--ghost);white-space:nowrap}
+.cfg-ax .spin{flex:1;min-width:0}
+
+/* chon loai doi tuong: dropdown chip */
+.obj-wrap{position:relative}
+.obj-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;
+  background:var(--field);border:1px solid var(--bd3);border-radius:6px;cursor:pointer}
+.obj-head.open{border-color:var(--gold3)}
+.obj-chip{font:500 10.5px/1 var(--m);color:#c9d4de;background:#1b232b;border:1px solid #2a333c;
+  border-radius:4px;padding:5px 7px;white-space:nowrap}
+.obj-chip.none{color:#5c6a77;background:transparent;border-color:transparent}
+.obj-caret{font:400 9px/1 var(--m);color:#5c6a77;flex:none;margin-left:auto}
+.obj-menu{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:20;padding:5px;
+  background:var(--card2);border:1px solid var(--bd3);border-radius:7px;
+  box-shadow:0 14px 34px rgba(0,0,0,.6)}
+.obj-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:5px;cursor:pointer}
+.obj-item:hover{background:var(--hov)}
+.obj-item.on{background:var(--hov)}
+.obj-box{width:14px;height:14px;border-radius:3px;border:1px solid #3a4550;flex:none;
+  display:grid;place-items:center}
+.obj-item.on .obj-box{background:var(--gold);border-color:var(--gold3)}
+.obj-item.on .obj-box::after{content:'';width:7px;height:4px;border-left:1.6px solid #08090b;
+  border-bottom:1.6px solid #08090b;transform:rotate(-45deg) translate(1px,-1px)}
+.obj-item .l{font:500 11.5px/1 var(--b);color:#9fb0be}
+.obj-item.on .l{color:var(--fg)}
+
+/* cong tac bat/tat cho tab Lien ket */
+.sw-row{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:7px;
+  border:1px solid var(--bd);cursor:pointer}
+.sw-row.on{background:var(--field);border-color:#33404c}
+.sw-row .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.sw-row .l{font:500 12px/1.3 var(--b);color:var(--dim)}
+.sw-row.on .l{color:var(--fg)}
+.sw-row .m{font:400 10px/1.3 var(--m);color:#5c6a77}
+.sw-tr{width:34px;height:18px;border-radius:99px;background:#222a32;flex:none;position:relative;
+  transition:background .16s ease}
+.sw-row.on .sw-tr{background:var(--gold3)}
+.sw-kn{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:#5c6a77;transition:transform .16s ease,background .16s ease}
+.sw-row.on .sw-kn{background:var(--head);transform:translateX(16px)}
+
+/* luoi lich 7x24 */
+.sc-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:11px}
+.sc-preset{font:500 10.5px/1 var(--m);color:var(--dim);background:var(--field);
+  border:1px solid var(--bd3);border-radius:99px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+.sc-preset:hover{border-color:var(--gold3);color:var(--gold2)}
+.sc-grid{display:flex;flex-direction:column;gap:4px}
+.sc-axis{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;align-items:center}
+.sc-axis .hh{display:flex;justify-content:space-between;font:400 8.5px/1 var(--m);color:#4a5764}
+.sc-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;align-items:center}
+.sc-day{font:500 10px/1 var(--m);color:var(--dim);cursor:pointer;white-space:nowrap;
+  background:none;border:none;padding:0;text-align:left}
+.sc-day:hover{color:var(--gold2)}
+.sc-cells{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:1px}
+.sc-cell{height:17px;background:#141b22;border-radius:1px;cursor:pointer}
+.sc-cell:hover{outline:1px solid var(--gold3)}
+.sc-cell.on{background:var(--gold3)}
+.sc-sum{font:400 10px/1.5 var(--m);color:var(--ghost);margin-top:10px}
+
+/* ---------- popup nap thuat toan cho camera ---------- */
+.fp-cap{flex:none;display:flex;align-items:center;gap:10px;padding:11px 16px;
+  border-bottom:1px solid var(--bd2);background:var(--head)}
+.fp-cap-k{font:600 9.5px/1 var(--m);letter-spacing:.09em;color:var(--ghost)}
+.fp-cap-v{font:700 15px/1 var(--m);color:var(--ok);min-width:46px}
+.fp-cap-v.warn{color:var(--warn)}
+.fp-cap-v.err{color:var(--err2)}
+.fp-bar{width:150px;height:4px;border-radius:2px;background:#1b232b;overflow:hidden}
+.fp-bar i{display:block;height:100%;background:var(--ok);transition:width .2s ease}
+.fp-bar i.warn{background:var(--warn)}
+.fp-bar i.err{background:var(--err)}
+.fp-body{flex:1;min-height:0;overflow:auto;padding:14px 16px;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:7px;align-content:start}
+
+
+/* ============================================================================
+   LIVE APPLE — LIQUID GLASS DESIGN SYSTEM
+   Pasted verbatim from "Live Apple.dc.html" <style> (source lines 13-406).
+   Attribute-selector based ([data-glass] [data-goldbtn] [data-tile] [data-seg]
+   [data-sw] [data-spin] [data-fntab] [data-roi] [data-zonerow] [data-sccell]
+   [data-hitem] [data-pick] [data-modal] ...), so it only touches markup that
+   opts in. Appended AFTER the legacy block on purpose: equal specificity,
+   later wins, and the legacy block keeps every contract the JS depends on.
+   ============================================================================ */
+/* ============================================================
+   VIBOTICS AI SMART BOX — LIQUID GLASS DESIGN SYSTEM
+   Base: deep-ink aurora background · Liquid glass surfaces ·
+   Gold CTA derived from the "Xem camera" button.
+   ============================================================ */
+:root{
+  --lg-bg:#0b0c0f;
+  --lg-bg-2:#101216;
+  --lg-ink:#f5f5f7;
+  --lg-ink-dim:#9a9aa0;
+  --lg-ink-faint:rgba(229,229,234,.5);
+  /* Gold palette (from the Xem-camera button) */
+  --gold-hi:#e6dbba;   /* gradient top   rgb(230,219,186) */
+  --gold-mid:#dbcb9f;  /* gradient mid   rgb(219,203,159) */
+  --gold-lo:#cdb98a;   /* gradient low   rgb(205,185,138) */
+  --gold-edge:#96814f; /* border         rgb(150,129,79)  */
+  --gold-ink:#2a2410;  /* text           rgb(42,36,16)    */
+  --gold-glow:rgba(213,194,149,.45);
+  --glass-blur:32px;
+  --ring-focus:0 0 0 3px rgba(213,194,149,.55), 0 0 18px rgba(213,194,149,.35);
+}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--lg-bg);background-attachment:fixed;color:var(--lg-ink);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#e6dbba}a:hover{color:#f4ecca}
+[data-no-scrollbar]{scrollbar-width:none}[data-no-scrollbar]::-webkit-scrollbar{display:none;width:0;height:0}
+::selection{background:rgba(213,194,149,.32);color:#fff}
+:focus-visible{outline:none;box-shadow:var(--ring-focus)}
+
+/* ---------- Liquid glass surface ---------- */
+[data-glass]{
+  backdrop-filter:blur(var(--glass-blur)) saturate(190%) brightness(1.14);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(190%) brightness(1.14);
+  position:relative;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(255,255,255,.06), 0 20px 42px rgba(0,0,0,.48);
+  background:linear-gradient(168deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.055) 42%, rgba(213,194,149,.07) 100%);
+}
+/* moving liquid sheen on glass hover — original sweep range, transition-based (no snap on exit) */
+[data-glass]::after{content:"";position:absolute;top:0;left:0;right:0;bottom:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:1;
+  background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.16) 48%,rgba(230,219,186,.14) 54%,transparent 68%);
+  background-size:240% 100%;transform:translateX(-22%);transition:opacity .28s ease, transform .28s ease}
+[data-glass]:hover::after{opacity:1;transform:translateX(24%);transition:opacity .55s ease, transform .55s ease}
+
+/* ---------- Gold CTA (liquid gold button) ---------- */
+[data-goldbtn]{
+  position:relative;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font:600 12px/1 'Inter',sans-serif;border-radius:12px;padding:10px 15px;cursor:pointer;white-space:nowrap;
+  background:linear-gradient(180deg,var(--gold-hi) 0%,var(--gold-mid) 45%,var(--gold-lo) 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 2px rgba(90,70,30,.18), 0 1px 4px rgba(0,0,0,.3), 0 4px 14px rgba(213,194,149,.18);
+  border:1px solid var(--gold-edge);color:var(--gold-ink);
+  transition:transform .16s cubic-bezier(.24,.8,.26,1), filter .18s ease, box-shadow .22s ease;
+}
+[data-goldbtn]::before{content:"";position:absolute;top:0;left:0;right:0;height:50%;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg,rgba(255,255,255,.42),rgba(255,255,255,0));opacity:.7}
+[data-goldbtn]::after{content:"";position:absolute;top:0;bottom:0;left:0;width:46%;pointer-events:none;opacity:0;
+  background:linear-gradient(115deg,transparent,rgba(255,255,255,.65),transparent);transform:translateX(-150%) skewX(-16deg)}
+[data-goldbtn]:hover{filter:brightness(1.07);box-shadow:inset 0 1px 0 rgba(255,255,255,.6), inset 0 -1px 2px rgba(90,70,30,.18), 0 0 0 1px rgba(213,194,149,.55), 0 8px 26px rgba(213,194,149,.38);transform:translateY(-1px)}
+[data-goldbtn]:hover::after{animation:lgBtnSheen .95s cubic-bezier(.22,.8,.3,1) forwards}
+[data-goldbtn]:active{transform:translateY(1px) scale(.985);filter:brightness(.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.4), inset 0 -1px 2px rgba(90,70,30,.22), 0 2px 8px rgba(0,0,0,.35)}
+
+/* ---------- Pagination controls (‹ › chips) ---------- */
+[data-pgctrl]{position:relative;transition:background .16s ease, color .16s ease, transform .13s ease, filter .16s ease, box-shadow .16s ease}
+[data-pgctrl]:hover{filter:brightness(1.12)}
+[data-pgctrl]:active{transform:scale(.9) !important;filter:brightness(.95)}
+/* ‹ › arrows — faint glass hover bg (disabled arrows stay inert via cursor:default) */
+[data-pgctrl][data-pg-dir]:hover{background:rgba(255,255,255,.09)}
+[data-pgctrl][data-pg-dir]:active{background:rgba(255,255,255,.15)}
+/* page chips (gold when current) — lift on hover, press down on active */
+[data-pgctrl][data-pg-chip]{position:relative;overflow:hidden}
+[data-pgctrl][data-pg-chip]:hover{filter:brightness(1.1);transform:translateY(-1px)}
+[data-pgctrl][data-pg-chip]:active{transform:translateY(0) scale(.9) !important}
+/* current (gold) chip gets the same sheen + glow as the gold CTA buttons */
+[data-pgctrl][data-pg-chip][data-pg-active="on"]::after{content:"";position:absolute;top:0;bottom:0;left:0;width:46%;pointer-events:none;opacity:0;
+  background:linear-gradient(115deg,transparent,rgba(255,255,255,.6),transparent);transform:translateX(-150%) skewX(-16deg)}
+[data-pgctrl][data-pg-chip][data-pg-active="on"]:hover::after{animation:lgBtnSheen .95s cubic-bezier(.22,.8,.3,1) forwards}
+/* current page chip renders as a circular gold button (like the dock tab buttons) */
+[data-pgctrl][data-pg-chip][data-pg-active="on"]{width:34px !important;height:34px !important;border-radius:50% !important;padding:0 !important}
+
+/* ---------- Dock tab buttons (gold active pill) ---------- */
+[data-dockitem]{position:relative}
+[data-dockitem]:hover [data-dockgold]{filter:brightness(1.12);box-shadow:0 0 0 1px rgba(213,194,149,.55), 0 0 18px rgba(213,194,149,.4), inset 0 1px 0 rgba(255,255,255,.55), inset 0 -2px 3px rgba(90,70,30,.22), 0 2px 6px rgba(0,0,0,.28)}
+[data-dockgold]{overflow:hidden}
+[data-dockgold]::after{content:"";position:absolute;top:0;bottom:0;left:0;width:46%;border-radius:inherit;pointer-events:none;opacity:0;
+  background:linear-gradient(115deg,transparent,rgba(255,255,255,.55),transparent);transform:translateX(-150%) skewX(-16deg)}
+[data-dockitem]:hover [data-dockgold]::after{animation:lgBtnSheen .95s cubic-bezier(.22,.8,.3,1) forwards}
+
+/* ---------- Language switch (VI / EN) — sliding gold pill, single button ---------- */
+/* only the gold thumb reacts on hover (brightness + scale + sheen), mirroring [data-dockgold].
+   The frame and the VI/EN labels deliberately do NOT scale — the thumb and labels are concentric
+   (thumb left:5px + translateX(0|44) vs. two 44px labels in an exactly-88px content box), so
+   growing the thumb alone keeps the text centred on it. */
+[data-langswitch]:hover [data-langthumb]{filter:brightness(1.12);scale:1.08}
+[data-langthumb]{overflow:hidden}
+[data-langthumb]::after{content:"";position:absolute;top:0;bottom:0;left:0;width:46%;border-radius:inherit;pointer-events:none;opacity:0;
+  background:linear-gradient(115deg,transparent,rgba(255,255,255,.6),transparent);transform:translateX(-150%) skewX(-16deg)}
+[data-langswitch]:hover [data-langthumb]::after{animation:lgBtnSheen .95s cubic-bezier(.22,.8,.3,1) forwards}
+/* option labels sit above the thumb (z-index:2); press feedback only */
+[data-langswitch] > span:not([data-langthumb]){z-index:2;transition:color .2s ease, transform .14s cubic-bezier(.24,.8,.26,1)}
+[data-langswitch] > span:not([data-langthumb]):active{transform:scale(.94)}
+
+/* ---------- Camera live tiles ---------- */
+[data-tile]{
+  position:relative;border-radius:18px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 10px 26px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.22);
+  transition:transform .3s cubic-bezier(.2,.8,.2,1), border-color .22s ease, box-shadow .24s ease;
+}
+[data-tile]::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:4;opacity:0;
+  box-shadow:inset 0 0 0 1px rgba(213,194,149,.0);transition:opacity .22s ease}
+[data-tile]:hover{transform:scale(1.02) translateY(-2px);border-color:var(--gold-glow);box-shadow:0 0 0 1px rgba(213,194,149,.42), 0 22px 44px rgba(0,0,0,.55), 0 10px 30px rgba(213,194,149,.18)}
+[data-tile]:hover::after{opacity:1;animation:lgRim 1.2s ease-out}
+[data-edge]{position:absolute;opacity:0;z-index:5;pointer-events:none;box-shadow:0 0 12px rgba(213,194,149,.7)}
+[data-edge="top"]{left:-48%;top:0;width:48%;height:2px;background:linear-gradient(90deg,transparent,#f6e7bd,transparent)}
+[data-edge="right"]{left:calc(100% - 2px);top:-48%;width:2px;height:48%;background:linear-gradient(180deg,transparent,#f6e7bd,transparent)}
+[data-edge="bottom"]{left:100%;top:calc(100% - 2px);width:48%;height:2px;background:linear-gradient(270deg,transparent,#f6e7bd,transparent)}
+[data-edge="left"]{left:0;top:100%;width:2px;height:48%;background:linear-gradient(0deg,transparent,#f6e7bd,transparent)}
+[data-tile]:hover [data-edge="top"]{animation:omEdgeTop 3.6s linear infinite}
+[data-tile]:hover [data-edge="right"]{animation:omEdgeRight 3.6s linear .9s infinite}
+[data-tile]:hover [data-edge="bottom"]{animation:omEdgeBottom 3.6s linear 1.8s infinite}
+[data-tile]:hover [data-edge="left"]{animation:omEdgeLeft 3.6s linear 2.7s infinite}
+
+/* ---------- Keyframes ---------- */
+@keyframes lgSheen{0%{transform:translateX(-22%)}100%{transform:translateX(24%)}}
+@keyframes lgBtnSheen{0%{opacity:0;transform:translateX(-160%) skewX(-16deg)}35%{opacity:1}100%{opacity:0;transform:translateX(320%) skewX(-16deg)}}
+@keyframes lgRim{0%{box-shadow:inset 0 0 0 1px rgba(213,194,149,.0)}40%{box-shadow:inset 0 0 0 1px rgba(213,194,149,.5)}100%{box-shadow:inset 0 0 0 1px rgba(213,194,149,.12)}}
+@keyframes omSheen{from{transform:translateX(-130%) skewX(-14deg)}to{transform:translateX(260%) skewX(-14deg)}}
+@keyframes omEdgeTop{0%{left:-48%;opacity:1}25%{left:52%;opacity:1}42%{left:100%;opacity:1}42.01%{left:100%;opacity:0}100%{left:100%;opacity:0}}
+@keyframes omEdgeRight{0%{top:-48%;opacity:1}25%{top:52%;opacity:1}42%{top:100%;opacity:1}42.01%{top:100%;opacity:0}100%{top:100%;opacity:0}}
+@keyframes omEdgeBottom{0%{left:100%;opacity:1}25%{left:0%;opacity:1}42%{left:-48%;opacity:1}42.01%{left:-48%;opacity:0}100%{left:-48%;opacity:0}}
+@keyframes omEdgeLeft{0%{top:100%;opacity:1}25%{top:0%;opacity:1}42%{top:-48%;opacity:1}42.01%{top:-48%;opacity:0}100%{top:-48%;opacity:0}}
+@keyframes aPulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes aFilterUp{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes aAlertGlow{0%,100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 0 0 rgba(255,69,58,.55),0 3px 10px rgba(214,44,34,.4)}50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 0 7px rgba(255,69,58,0),0 3px 16px rgba(255,69,58,.75)}}
+/* viền ĐỎ toả ra khi camera có phát hiện — cùng tông #ff453a với aAlertGlow/.tile.alert */
+@keyframes aDetectRim{
+  0%,100%{border-color:rgba(255,88,78,.55);
+    box-shadow:0 0 0 1.5px rgba(255,88,78,.40),0 0 14px rgba(255,69,58,.18),0 22px 48px rgba(0,0,0,.62)}
+  50%{border-color:#ff453a;
+    box-shadow:0 0 0 2.5px rgba(255,69,58,.72),0 0 34px rgba(255,69,58,.46),0 22px 48px rgba(0,0,0,.62)}}
+@keyframes lgAuroraA{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(6%,4%,0) scale(1.12)}100%{transform:translate3d(0,0,0) scale(1)}}
+@keyframes lgAuroraB{0%{transform:translate3d(0,0,0) scale(1.08)}50%{transform:translate3d(-5%,-3%,0) scale(.95)}100%{transform:translate3d(0,0,0) scale(1.08)}}
+@keyframes lgAuroraC{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(4%,-5%,0) scale(1.1)}100%{transform:translate3d(0,0,0) scale(1)}}
+@keyframes lgSpinA{to{transform:rotate(360deg)}}
+@keyframes lgSpinB{to{transform:rotate(360deg)}}
+[data-rspin="a"] svg{animation:lgSpinA .6s cubic-bezier(.4,0,.2,1);transform-origin:50% 50%}
+[data-rspin="b"] svg{animation:lgSpinB .6s cubic-bezier(.4,0,.2,1);transform-origin:50% 50%}
+
+[data-alert-badge]{animation:aAlertGlow 1.8s ease-out infinite}
+[data-edge-alert]{border-color:#d8c186 !important;box-shadow:0 0 0 1.5px rgba(216,193,134,.65), 0 0 24px rgba(213,194,149,.25), 0 22px 48px rgba(0,0,0,.62)}
+[data-edge-alert] [data-edge="top"]{animation:omEdgeTop 3.6s linear infinite}
+[data-edge-alert] [data-edge="right"]{animation:omEdgeRight 3.6s linear .9s infinite}
+[data-edge-alert] [data-edge="bottom"]{animation:omEdgeBottom 3.6s linear 1.8s infinite}
+[data-edge-alert] [data-edge="left"]{animation:omEdgeLeft 3.6s linear 2.7s infinite}
+@media (max-width:1100px){[data-hide-narrow]{display:none !important}}
+[data-logrow]{transition:background .16s ease,transform .16s ease}
+[data-logrow]:hover{background:rgba(213,194,149,.08)}
+.tl-day{display:flex;align-items:center;gap:11px;padding:14px 16px 0}
+.tl-day .d{font:700 10.5px/1 'Inter',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:rgba(229,229,234,.45);white-space:nowrap}
+.tl-day .ln{flex:1;height:1px;background:rgba(255,255,255,.08)}
+.tl{display:flex;flex-direction:column;padding:0 16px 6px;flex:1;min-height:0;overflow:auto;scrollbar-width:none}
+.tl::-webkit-scrollbar{display:none;width:0;height:0}
+.tl-row{--tl-anchor:30px;position:relative;display:grid;grid-template-columns:78px 24px minmax(0,1fr);align-items:stretch;cursor:pointer;border-radius:0;transition:background .16s ease;margin:0 -16px;padding:0 16px}
+.tl-row:hover{background:rgba(213,194,149,.08)}
+.tl-row::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);box-shadow:0 0 12px rgba(213,194,149,.65),0 0 2px rgba(213,194,149,.8);opacity:0;transform:scaleY(.35);transform-origin:center;transition:opacity .22s ease,transform .26s cubic-bezier(.2,.85,.25,1)}
+.tl-row:hover::before{left:0;opacity:1;transform:scaleY(1)}
+.tl-t{display:flex;align-items:baseline;justify-content:flex-end;gap:1px;padding:calc(var(--tl-anchor) - 8px) 0 15px 4px}
+.tl-hm{font:500 14px/1 'JetBrains Mono',monospace;color:#d1d1d6}
+.tl-sec{font:400 11px/1 'JetBrains Mono',monospace;color:rgba(229,229,234,.4)}
+.tl-mid{position:relative;display:flex;justify-content:center}
+.tl-mid .ln{width:1px;background:rgba(255,255,255,.1)}
+.tl-dot{position:absolute;top:calc(var(--tl-anchor) - 5px);width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 3px rgba(11,12,15,.6),0 0 10px currentColor}
+.tl-b{display:flex;align-items:center;gap:16px;padding:12px 0 12px 16px;border-bottom:1px solid rgba(255,255,255,.06);min-width:0}
+.tl-th{position:relative;flex:none;width:150px;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#101216}
+.tl-th .sc{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.04) 0 1px,transparent 1px 3px)}
+.tl-th .box{position:absolute;left:38%;top:22%;width:22%;height:56%;border:1.5px solid;border-radius:2px}
+.tl-th .cam{position:absolute;bottom:6px;left:7px;font:500 10px/1 'JetBrains Mono',monospace;color:#fff;text-shadow:0 1px 2px #000}
+.tl-mn{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.tl-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tl-kind{display:inline-flex;align-items:center;gap:6px;font:700 10px/1 'Inter',sans-serif;letter-spacing:.06em;background:rgba(255,255,255,.06);border:1px solid;border-radius:99px;padding:6px 10px;white-space:nowrap}
+.tl-kind i{width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.tl-new{flex:none;display:inline-flex;align-items:center;
+  font:800 9px/1 var(--b);letter-spacing:.05em;padding:5px 8px;border-radius:99px;
+  color:#ff453a;background:linear-gradient(168deg,rgba(255,88,78,.30) 0%,rgba(255,88,78,.12) 55%,rgba(214,44,34,.20) 100%);
+  border:1px solid rgba(255,255,255,.32);text-shadow:0 1px 2px rgba(0,0,0,.6);
+  backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
+  -webkit-backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 8px 20px rgba(0,0,0,.4)}
+/* Badge nhận diện người — chip cùng kiểu .tl-kind, ngay bên phải nó. */
+.tl-per-badge{display:inline-flex;align-items:center;gap:5px;font:700 10px/1 'Inter',sans-serif;letter-spacing:.04em;color:#bf5af2;background:rgba(191,90,242,.16);border:1px solid rgba(191,90,242,.45);border-radius:99px;padding:6px 10px;white-space:nowrap}
+.tl-ttl{font:600 16px/1.25 'Inter',sans-serif;color:#f5f5f7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-sub{font:400 11px/1.3 'JetBrains Mono',monospace;color:rgba(229,229,234,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-r{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px;padding-right:2px}
+.tl-conf{font:600 12px/1 'JetBrains Mono',monospace}
+.tl-bar{width:64px;height:3px;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden}
+.tl-bar i{display:block;height:100%}
+.tl-more{font:500 12.5px/1 'Inter',sans-serif;color:#d5c295;white-space:nowrap}
+/* Người được nhận diện: ảnh to bằng ảnh camera (.tl-th), bên phải tên hành vi.
+   Không khung viền — ảnh full khung, tên + độ chính xác phủ lên như .cam. */
+.tl-per{flex:none;display:flex;align-items:center;gap:10px;align-self:center;margin-right:640px}
+.tl-per img{width:150px;aspect-ratio:16/9;border-radius:8px;object-fit:cover;display:block;background:#101216}
+.tl-per-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
+.tl-per-nm{font:600 13px/1.2 'Inter',sans-serif;color:#f5f5f7;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.tl-per-sc{font:600 11px/1 'JetBrains Mono',monospace;color:#d5c295;white-space:nowrap}
+[data-camrow]{position:relative;transition:background .16s ease,transform .16s ease}
+[data-camrow]::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);box-shadow:0 0 12px rgba(213,194,149,.65), 0 0 2px rgba(213,194,149,.8);opacity:0;transform:scaleY(.35);transform-origin:center;transition:opacity .22s ease,transform .26s cubic-bezier(.2,.85,.25,1)}
+[data-camrow]:hover{background:rgba(213,194,149,.08)}
+[data-camrow]:hover::before{opacity:1;transform:scaleY(1)}
+/* "Độ trễ" header centred to match its centred cell value */
+[data-camhead] > span:nth-child(5){text-align:center}
+
+/* ---------- Floating glass panel (shared by list views) ---------- */
+.lg-panel{position:relative;border-radius:20px;overflow:hidden;
+  background:linear-gradient(168deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.045) 45%,rgba(213,194,149,.06) 100%);
+  border:1px solid rgba(255,255,255,.15);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4), inset 0 -1px 0 rgba(255,255,255,.06), 0 22px 46px rgba(0,0,0,.5);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1);-webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1)}
+.lg-panel::before{content:"";position:absolute;top:0;left:0;right:0;height:52%;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,0))}
+
+/* ---------- Stat chip for metrics strip ---------- */
+.lg-stat{position:relative;border-radius:16px;padding:14px 16px;overflow:hidden;
+  background:linear-gradient(165deg,rgba(255,255,255,.13),rgba(255,255,255,.05) 50%,rgba(213,194,149,.07));
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4), inset 0 -1px 0 rgba(255,255,255,.05), 0 12px 26px rgba(0,0,0,.4);
+  backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);
+  transition:transform .22s cubic-bezier(.2,.85,.25,1), border-color .2s ease, box-shadow .22s ease}
+.lg-stat:hover{transform:translateY(-3px);border-color:var(--gold-glow);box-shadow:inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(255,255,255,.05), 0 0 0 1px rgba(213,194,149,.28), 0 18px 34px rgba(0,0,0,.5)}
+
+/* ---------- Library card ---------- */
+[data-libcard]{transition:transform .26s cubic-bezier(.2,.85,.25,1),border-color .18s ease,box-shadow .22s ease}
+[data-libcard]:hover{transform:translateY(-4px);border-color:rgba(213,194,149,.7) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,.42), 0 0 0 1px rgba(213,194,149,.3), 0 18px 38px rgba(0,0,0,.55)}
+[data-libcard] [data-libactions]{opacity:0;transform:translateY(-4px);transition:opacity .18s ease,transform .18s ease}
+[data-libcard]:hover [data-libactions]{opacity:1;transform:none}
+
+/* ---------- Dock ---------- */
+[data-dockitem]{width:46px;height:42px;transition:transform .26s cubic-bezier(.2,.85,.25,1)}
+[data-dock] [data-dock-label]{opacity:0;transform:translateY(4px) scale(.9);transition:opacity .2s ease,transform .24s cubic-bezier(.2,.85,.25,1)}
+[data-dock] [data-dock-icon]{transition:transform .24s cubic-bezier(.2,.85,.25,1)}
+[data-dock] [data-dockitem] svg{transition:none}
+[data-dock] [data-dockitem][data-active="off"]:hover [data-dock-icon] svg{stroke:#d5c295}
+[data-dock] [data-dockitem]:hover{transform:scale(1.08)}
+
+/* ---------- Algorithm selection chip ---------- */
+.algo-chip{position:relative}
+.algo-chip:hover{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(213,194,149,.35), 0 6px 16px rgba(0,0,0,.35)}
+.algo-chip:active{transform:translateY(0) scale(.97)}
+
+/* ---------- Secondary buttons: ghost glass + liquid red ---------- */
+[data-glassbtn],[data-redbtn]{position:relative;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  font:600 12px/1 'Inter',sans-serif;border-radius:12px;padding:10px 15px;cursor:pointer;white-space:nowrap;
+  transition:transform .16s cubic-bezier(.24,.8,.26,1),filter .18s ease,border-color .18s ease,box-shadow .2s ease}
+[data-glassbtn]{color:#e5e5ea;background:linear-gradient(168deg,rgba(255,255,255,.14),rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 6px 16px rgba(0,0,0,.3);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+[data-glassbtn]:hover{filter:brightness(1.14);border-color:rgba(213,194,149,.42);transform:translateY(-1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.34),0 0 0 1px rgba(213,194,149,.2),0 10px 24px rgba(0,0,0,.42)}
+[data-glassbtn]:active{transform:translateY(1px) scale(.985);filter:brightness(.94)}
+/* red sibling of the gold CTA — same liquid build, alarm palette */
+[data-redbtn]{color:#fff;background:linear-gradient(180deg,#ff8a80 0%,#ff584e 45%,#d62c22 100%);border:1px solid #a3332a;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -1px 2px rgba(90,20,15,.24),0 1px 4px rgba(0,0,0,.3),0 4px 14px rgba(214,44,34,.26)}
+[data-redbtn]::before{content:"";position:absolute;top:0;left:0;right:0;height:50%;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,0));opacity:.7}
+[data-redbtn]::after{content:"";position:absolute;top:0;bottom:0;left:0;width:46%;pointer-events:none;opacity:0;
+  background:linear-gradient(115deg,transparent,rgba(255,255,255,.6),transparent);transform:translateX(-150%) skewX(-16deg)}
+[data-redbtn]:hover{filter:brightness(1.07);transform:translateY(-1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 0 0 1px rgba(255,109,99,.5),0 8px 26px rgba(255,69,58,.36)}
+[data-redbtn]:hover::after{animation:lgBtnSheen .95s cubic-bezier(.22,.8,.3,1) forwards}
+[data-redbtn]:active{transform:translateY(1px) scale(.985);filter:brightness(.95)}
+
+/* ---------- Big player stage ---------- */
+[data-stage]{position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 22px 48px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.22);transition:border-color .22s ease,box-shadow .24s ease}
+[data-stage]:hover{border-color:var(--gold-glow);box-shadow:0 0 0 1px rgba(213,194,149,.34),0 26px 56px rgba(0,0,0,.6),0 12px 34px rgba(213,194,149,.14)}
+[data-stage]::after{content:"";position:absolute;top:0;left:0;right:0;height:46%;pointer-events:none;z-index:2;
+  background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,0))}
+[data-stage]:hover [data-edge="top"]{animation:omEdgeTop 3.6s linear infinite}
+[data-stage]:hover [data-edge="right"]{animation:omEdgeRight 3.6s linear .9s infinite}
+[data-stage]:hover [data-edge="bottom"]{animation:omEdgeBottom 3.6s linear 1.8s infinite}
+[data-stage]:hover [data-edge="left"]{animation:omEdgeLeft 3.6s linear 2.7s infinite}
+[data-ctl]{display:grid;place-items:center;width:32px;height:32px;border-radius:11px;cursor:pointer;color:#f5f5f7;
+  background:linear-gradient(168deg,rgba(255,255,255,.16),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.18);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 12px rgba(0,0,0,.34);
+  transition:transform .15s cubic-bezier(.24,.8,.26,1),filter .16s ease,border-color .18s ease}
+[data-ctl]:hover{filter:brightness(1.16);border-color:rgba(213,194,149,.5);transform:translateY(-1px)}
+[data-ctl]:active{transform:translateY(1px) scale(.92)}
+
+/* ---------- Key/value card rows ---------- */
+[data-kv]{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+[data-kv]:last-child{border-bottom:none}
+.lg-card-h{font:700 9.5px/1 'Inter',sans-serif;letter-spacing:.16em;text-transform:uppercase;color:rgba(229,229,234,.5)}
+
+/* ---------- Alert history strip ---------- */
+[data-hitem]{position:relative;flex:none;width:138px;aspect-ratio:16/9;border-radius:13px;overflow:hidden;cursor:pointer;
+  border:1px solid rgba(255,255,255,.13);box-shadow:0 8px 20px rgba(0,0,0,.4);
+  transition:transform .22s cubic-bezier(.2,.85,.25,1),border-color .2s ease,box-shadow .22s ease}
+[data-hitem]:hover{transform:translateY(-3px) scale(1.02);border-color:var(--gold-glow);box-shadow:0 0 0 1px rgba(213,194,149,.4),0 14px 30px rgba(0,0,0,.5)}
+[data-hitem][data-cur="on"]{border-color:#d8c186;box-shadow:0 0 0 1.5px rgba(216,193,134,.6),0 0 22px rgba(213,194,149,.3)}
+[data-hplay]{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.86);display:grid;place-items:center;
+  width:30px;height:30px;border-radius:50%;background:rgba(10,10,12,.5);border:1px solid rgba(213,194,149,.6);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:.82;transition:opacity .18s ease,transform .22s cubic-bezier(.2,.85,.25,1)}
+[data-hitem]:hover [data-hplay]{opacity:1;transform:translate(-50%,-50%) scale(1)}
+
+/* ---------- Liquid gold toggle ---------- */
+[data-sw]{position:relative;flex:none;width:46px;height:27px;border-radius:99px;cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.42),inset 0 -1px 0 rgba(255,255,255,.06);
+  transition:background .24s ease,border-color .24s ease,box-shadow .24s ease}
+[data-swknob]{position:absolute;top:2px;left:2px;width:21px;height:21px;border-radius:50%;
+  background:linear-gradient(180deg,#fbfbfd,#c8c8ce);box-shadow:0 1px 3px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.8);
+  transition:transform .28s cubic-bezier(.2,.85,.25,1),background .24s ease}
+[data-sw][data-on="on"]{background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);border-color:#96814f;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -1px 2px rgba(90,70,30,.2),0 0 16px rgba(213,194,149,.36)}
+[data-sw][data-on="on"] [data-swknob]{transform:translateX(19px);background:linear-gradient(180deg,#3b3220,#241f0e)}
+[data-swrow]{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.055);cursor:pointer}
+[data-swrow]:last-child{border-bottom:none}
+
+/* ---------- Stepper (− value +) ---------- */
+[data-spin]{display:inline-flex;align-items:center;flex:none;height:33px;border-radius:11px;overflow:hidden;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
+[data-spin] button{width:31px;height:100%;display:grid;place-items:center;border:none;cursor:pointer;background:transparent;
+  font:600 15px/1 'Inter',sans-serif;color:#d5c295;transition:background .15s ease,transform .12s ease}
+[data-spin] button:hover{background:rgba(213,194,149,.18)}
+[data-spin] button:active{transform:scale(.86)}
+[data-spin] input{width:52px;height:100%;border:none;outline:none;background:transparent;text-align:center;
+  font:600 12.5px/1 'JetBrains Mono',monospace;color:#f5f5f7;border-left:1px solid rgba(255,255,255,.1);border-right:1px solid rgba(255,255,255,.1)}
+
+/* ---------- Segmented control ---------- */
+[data-seg]{display:flex;align-items:center;gap:3px;padding:3px;border-radius:13px;
+  background:linear-gradient(165deg,rgba(255,255,255,.1),rgba(255,255,255,.04));border:1px solid rgba(255,255,255,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 8px 20px rgba(0,0,0,.32)}
+[data-segitem]{position:relative;overflow:hidden;font:600 12px/1 'Inter',sans-serif;border-radius:10px;padding:9px 14px;
+  cursor:pointer;white-space:nowrap;transition:background .18s ease,color .18s ease,transform .14s ease,filter .16s ease}
+[data-segitem]:hover{filter:brightness(1.12)}
+[data-segitem]:active{transform:scale(.96)}
+
+/* ---------- Algorithm function tabs ---------- */
+[data-fntab]{position:relative;display:inline-flex;align-items:center;gap:8px;height:35px;padding:0 11px;border-radius:12px;
+  cursor:pointer;white-space:nowrap;transition:transform .16s ease,border-color .18s ease,box-shadow .2s ease,filter .18s ease}
+[data-fntab]:hover{transform:translateY(-1px);filter:brightness(1.12)}
+[data-fntab]:active{transform:translateY(0) scale(.97)}
+[data-fnx]{display:grid;place-items:center;width:16px;height:16px;border-radius:50%;opacity:.5;
+  font:600 10px/1 'Inter',sans-serif;transition:opacity .16s ease,background .16s ease}
+[data-fntab]:hover [data-fnx]{opacity:1;background:rgba(255,69,58,.3)}
+
+/* ---------- ROI drawing stage ---------- */
+[data-roi]{position:relative;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 16px 36px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2);transition:border-color .2s ease,box-shadow .24s ease}
+[data-roi][data-drawing="on"]{cursor:crosshair;border-color:rgba(213,194,149,.66);
+  box-shadow:0 0 0 1px rgba(213,194,149,.4),0 16px 40px rgba(0,0,0,.55),0 0 36px rgba(213,194,149,.16)}
+[data-roi][data-drawing="on"] [data-roigrid]{opacity:1}
+[data-roigrid]{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity .24s ease;
+  background:repeating-linear-gradient(0deg,rgba(213,194,149,.09) 0 1px,transparent 1px 28px),
+             repeating-linear-gradient(90deg,rgba(213,194,149,.09) 0 1px,transparent 1px 28px)}
+[data-roiscan]{position:absolute;left:0;right:0;top:0;height:14%;z-index:3;pointer-events:none;opacity:0;
+  background:linear-gradient(180deg,transparent,rgba(213,194,149,.22),transparent)}
+[data-roi][data-drawing="on"] [data-roiscan]{opacity:1;animation:lgScan 3.6s linear infinite}
+@keyframes lgScan{0%{transform:translateY(-120%)}100%{transform:translateY(760%)}}
+
+/* ---------- Zone list rows ---------- */
+[data-zonerow]{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);
+  transition:background .16s ease,border-color .18s ease,transform .16s ease}
+[data-zonerow]:hover{background:rgba(213,194,149,.08);border-color:rgba(213,194,149,.3);transform:translateX(2px)}
+[data-zonerow][data-cur="on"]{background:rgba(213,194,149,.13);border-color:rgba(213,194,149,.48)}
+[data-zact]{flex:none;font:600 10.5px/1 'Inter',sans-serif;color:#d5c295;background:rgba(213,194,149,.12);
+  border:1px solid rgba(213,194,149,.28);border-radius:9px;padding:7px 10px;cursor:pointer;white-space:nowrap;
+  transition:filter .16s ease,transform .14s ease,background .16s ease}
+[data-zact]:hover{filter:brightness(1.18);background:rgba(213,194,149,.2)}
+[data-zact]:active{transform:scale(.94)}
+[data-zact="rm"]{color:#ff8a84;background:rgba(255,69,58,.14);border-color:rgba(255,69,58,.3)}
+[data-zact="rm"]:hover{background:rgba(255,69,58,.24)}
+
+/* ---------- 7×24 guard schedule ---------- */
+[data-scday]{flex:none;width:38px;height:20px;border-radius:7px;cursor:pointer;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);font:600 10.5px/1 'Inter',sans-serif;color:#a1a1a6;
+  transition:background .16s ease,color .16s ease,border-color .16s ease,transform .14s ease}
+[data-scday]:hover{background:rgba(213,194,149,.16);color:#e6dbba;border-color:rgba(213,194,149,.34)}
+[data-scday]:active{transform:scale(.93)}
+[data-sccell]{flex:1;height:19px;border-radius:4px;cursor:pointer;background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.06);transition:background .16s ease,box-shadow .2s ease,transform .12s ease}
+[data-sccell]:hover{transform:scaleY(1.2);background:rgba(213,194,149,.22)}
+[data-sccell][data-on="on"]{background:linear-gradient(180deg,#e6dbba 0%,#cdb98a 100%);border-color:rgba(150,129,79,.75);
+  box-shadow:0 0 9px rgba(213,194,149,.4)}
+
+/* ---------- Modals ---------- */
+[data-overlay]{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:24px;
+  background:rgba(6,7,9,.6);backdrop-filter:blur(12px) saturate(120%);-webkit-backdrop-filter:blur(12px) saturate(120%);
+  animation:aFadeIn .2s ease both}
+[data-modal]{position:relative;max-height:calc(100vh - 48px);display:flex;flex-direction:column;animation:aModalIn .3s cubic-bezier(.2,.85,.25,1) both}
+@keyframes aFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes aModalIn{from{opacity:0;transform:translateY(16px) scale(.965)}to{opacity:1;transform:none}}
+[data-mx]{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;cursor:pointer;color:rgba(229,229,234,.7);
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.13);font:400 13px/1 'Inter',sans-serif;
+  transition:background .16s ease,color .16s ease,transform .2s ease,border-color .16s ease}
+[data-mx]:hover{background:rgba(255,69,58,.24);border-color:rgba(255,69,58,.4);color:#fff;transform:rotate(90deg)}
+
+/* ---------- Algorithm picker tile ---------- */
+[data-pick]{position:relative;display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:13px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  transition:transform .16s ease,border-color .18s ease,background .18s ease,box-shadow .2s ease,opacity .18s ease}
+[data-pick]:hover{transform:translateY(-2px);border-color:rgba(213,194,149,.4);box-shadow:0 8px 20px rgba(0,0,0,.36)}
+[data-pick][data-on="on"]{background:linear-gradient(165deg,rgba(213,194,149,.22),rgba(213,194,149,.07));
+  border-color:rgba(213,194,149,.52);box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 0 18px rgba(213,194,149,.15)}
+[data-pick][data-lock="on"]{opacity:.32;cursor:not-allowed}
+[data-pick][data-lock="on"]:hover{transform:none;border-color:rgba(255,255,255,.1);box-shadow:none}
+[data-pickbox]{flex:none;display:grid;place-items:center;width:17px;height:17px;border-radius:6px;
+  background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.24);transition:background .18s ease,border-color .18s ease}
+[data-pick][data-on="on"] [data-pickbox]{background:linear-gradient(180deg,#e6dbba,#cdb98a);border-color:#96814f}
+
+@media (max-width:1180px){[data-split]{grid-template-columns:minmax(0,1fr) !important}[data-aicols]{grid-template-columns:minmax(0,1fr) !important}}
+@media (min-width:1181px){[data-split]{grid-template-rows:minmax(0,1fr) auto}[data-split] > aside{min-height:0}}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition-duration:.01ms !important}
+}
+
+/* ============================================================================
+   OVERRIDE LAYER — Live Apple palette + glass surfaces.
+
+   Why this layer exists: the design's own markup carries inline styles, so it
+   renders 1:1 with no help from here. But ~60 class families are written by
+   ui.js / ai.js / app.js at runtime via innerHTML (tiles, toasts, log rows,
+   camera rows, algo chips, zones, spinners, switches, schedule cells, modals).
+   Those have no inline styles, so they are re-skinned here by (a) redefining
+   the legacy tokens they already consume and (b) targeted surface overrides.
+
+   Legacy :root names are KEPT because JS writes them inline at 33 sites:
+   var(--ok) var(--warn) var(--err) var(--err2) var(--dim) var(--gold3).
+   ============================================================================ */
+:root{
+  --bg:#0b0c0f;                 /* was #070a10 — design --lg-bg */
+  --head:rgba(16,18,23,.72);
+  --card:#101216;               /* design --lg-bg-2 */
+  --card2:rgba(18,20,25,.86);
+  --field:rgba(255,255,255,.07);
+  --bd:rgba(255,255,255,.14);
+  --bd2:rgba(255,255,255,.08);
+  --bd3:rgba(255,255,255,.16);
+  --bd4:rgba(255,255,255,.10);
+  --hov:rgba(213,194,149,.10);
+  --fg:#f5f5f7; --fg2:#d1d1d6;
+  --dim:rgba(229,229,234,.62); --ghost:rgba(229,229,234,.45);
+  --gold:#d5c295; --gold2:#e6dbba; --gold3:#cdb98a;
+  --grad:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);
+  --gradh:linear-gradient(180deg,#f2e9cf 0%,#e6dbba 45%,#d9c8a0 100%);
+  --teal:#5fe3d0;
+  --ok:#30d158; --warn:#ff9f0a; --err:#ff453a; --err2:#ff8a84;
+  /* NEW — referenced by JS but never defined before the port:
+     ai.js hint() writes var(--faint); app.js FILTERS writes var(--cy). */
+  --faint:rgba(229,229,234,.45);
+  --cy:#5fe3d0;
+  --gink:#2a2410; --gglow:rgba(213,194,149,.45);
+  --b:'Inter',system-ui,sans-serif;
+  --m:'JetBrains Mono',monospace;
+  --sa:'Inter',var(--b);
+}
+
+/* ---------- scrollbars: thin gold-on-dark instead of slate ---------- */
+::-webkit-scrollbar-thumb{background:rgba(213,194,149,.28);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:rgba(213,194,149,.45)}
+
+/* ---------- buttons ---------- */
+.btn{background:linear-gradient(168deg,rgba(255,255,255,.14),rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:9px 14px;
+  color:#e5e5ea;font:600 12px/1 var(--b);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 6px 16px rgba(0,0,0,.3);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  transition:transform .16s cubic-bezier(.24,.8,.26,1),filter .18s ease,border-color .18s ease,box-shadow .2s ease}
+.btn:hover{filter:brightness(1.14);border-color:rgba(213,194,149,.42);color:var(--gold2);transform:translateY(-1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.34),0 0 0 1px rgba(213,194,149,.2),0 10px 24px rgba(0,0,0,.42)}
+.btn:active{transform:translateY(1px) scale(.985);filter:brightness(.94)}
+.btn.on{color:var(--gink);border-color:#96814f;background:var(--grad)}
+/* .btn-cy is the primary/gold CTA in the legacy markup -> liquid gold */
+.btn-cy{position:relative;overflow:hidden;background:var(--grad);border:1px solid #96814f;
+  border-radius:12px;padding:9px 15px;color:#2a2410;font:600 12px/1 var(--b);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -1px 2px rgba(90,70,30,.18),0 1px 4px rgba(0,0,0,.3),0 4px 14px rgba(213,194,149,.18);
+  transition:transform .16s cubic-bezier(.24,.8,.26,1),filter .18s ease,box-shadow .22s ease}
+.btn-cy::after{content:"";position:absolute;top:0;bottom:0;left:0;width:46%;pointer-events:none;opacity:0;
+  background:linear-gradient(115deg,transparent,rgba(255,255,255,.65),transparent);transform:translateX(-150%) skewX(-16deg)}
+.btn-cy:hover{filter:brightness(1.07);transform:translateY(-1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 0 1px rgba(213,194,149,.55),0 8px 26px rgba(213,194,149,.38)}
+.btn-cy:hover::after{animation:lgBtnSheen .95s cubic-bezier(.22,.8,.3,1) forwards}
+.btn-cy:active{transform:translateY(1px) scale(.985);filter:brightness(.95)}
+.btn-gh{background:transparent;border:1px solid rgba(255,255,255,.16);border-radius:12px;
+  padding:9px 14px;color:var(--dim);font:600 12px/1 var(--b);cursor:pointer;
+  transition:border-color .18s ease,color .18s ease}
+.btn-gh:hover{color:var(--fg2);border-color:rgba(213,194,149,.42)}
+.btn-del:hover{border-color:rgba(255,69,58,.5);color:var(--err2)}
+.ico{width:27px;height:27px;border-radius:8px;
+  background:linear-gradient(165deg,rgba(255,255,255,.14),rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.16);
+  transition:transform .14s ease,filter .16s ease,border-color .16s ease}
+.ico:hover{background:linear-gradient(165deg,rgba(255,255,255,.18),rgba(255,255,255,.06));
+  border-color:rgba(213,194,149,.42);filter:brightness(1.12);transform:translateY(-1px)}
+.ico.rm{background:linear-gradient(165deg,rgba(255,69,58,.2),rgba(255,69,58,.05));
+  border:1px solid rgba(255,69,58,.34)}
+.ico.rm:hover{background:rgba(255,69,58,.28);border-color:rgba(255,69,58,.5)}
+.ico svg{stroke:#e5e5ea}
+.ico.gold{background:var(--grad);border:1px solid #96814f;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.2),0 1px 4px rgba(0,0,0,.28)}
+.ico.gold svg{stroke:#2a2410}
+.ico.gold:hover{filter:brightness(1.08)}
+/* segmented control -> design [data-seg] */
+.seg{background:linear-gradient(165deg,rgba(255,255,255,.1),rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.13);border-radius:13px;padding:3px;gap:3px;overflow:visible;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 8px 20px rgba(0,0,0,.32)}
+.seg button{border-radius:10px;padding:8px 13px;color:#e5e5ea;font:600 12px/1 var(--b);
+  transition:background .18s ease,color .18s ease,transform .14s ease,filter .16s ease}
+.seg button:hover{filter:brightness(1.12);background:transparent}
+.seg button:active{transform:scale(.96)}
+.seg button.on{background:var(--grad);color:#2a2410;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.18)}
+
+/* ---------- dropdown menus -> 1:1 design: nen data-glass + hang vang relief ---------- */
+.menu{position:absolute;padding:6px;border-radius:16px;animation:aFilterUp .22s cubic-bezier(.2,.85,.25,1) both}
+.menu .mrow{display:flex;align-items:center;gap:10px;height:38px;padding:0 13px;
+  border-radius:12px;background:transparent;cursor:pointer;transition:background .16s ease}
+.menu .mrow:hover{background:rgba(255,255,255,.10)}
+.menu .mrow.on{background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -1px 2px rgba(90,70,30,.16)}
+.menu .mrow .dot{width:6px;height:6px;border-radius:50%;flex:none}
+.menu .mrow .l{flex:1;font:600 12.5px/1 var(--b);color:#e5e5ea;white-space:nowrap}
+.menu .mrow .k{font:600 11px/1 var(--b);color:rgba(229,229,234,.5)}
+.menu .mrow.on .l{color:#2a2410}
+.menu .mrow.on .k{color:rgba(42,36,16,.6)}
+.menu .mrow .ck{display:none;flex:none;width:13px;height:13px}
+.menu .mrow.on .ck{display:block}
+/* menu loc nhat ky: design dung hang 36px/12px, radius 11, relief nhe hon */
+#logFilterMenu .mrow{height:36px;padding:0 12px;border-radius:11px}
+#logFilterMenu .mrow .l{font-size:12px}
+#logFilterMenu .mrow .k{font-weight:500}
+#logFilterMenu .mrow.on{box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+.msep{background:rgba(255,255,255,.10)}
+
+/* ---------- LIVE tiles: design [data-tile] look on the legacy .tile class ----------
+   aspect-ratio:16/9 comes from the legacy block above and MUST survive: without a
+   definite height the <video-stream> IntersectionObserver (threshold .01) never
+   fires and every tile idles with no video and no console error. */
+.tile{border-radius:18px;background:#101216;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 10px 26px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.22);
+  transition:transform .3s cubic-bezier(.2,.8,.2,1),border-color .22s ease,box-shadow .24s ease}
+.tile:hover{transform:scale(1.02) translateY(-2px);border-color:var(--gglow);
+  box-shadow:0 0 0 1px rgba(213,194,149,.42),0 22px 44px rgba(0,0,0,.55),0 10px 30px rgba(213,194,149,.18)}
+.tile video,.tile video-stream{border-radius:18px}
+.tile video{background:#08090b}
+/* the design's top scrim + bottom scrim, as a pseudo-element so the tile
+   template needs no extra node */
+.tile::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(180deg,rgba(0,0,0,.52) 0%,transparent 28%,transparent 58%,rgba(0,0,0,.76) 100%)}
+.t-top{top:13px;left:15px;right:15px;z-index:6;pointer-events:none}
+.t-bot{bottom:11px;left:15px;right:15px;z-index:6;pointer-events:none}
+.t-name{font:600 15.5px/1.2 var(--b);letter-spacing:-.01em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.t-code{font:400 11px/1.3 var(--b);color:rgba(255,255,255,.6);text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.t-meta{font:500 10.5px/1 var(--m);color:rgba(255,255,255,.7);text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.t-note{font:500 11.5px/1 var(--b);color:rgba(255,255,255,.82);text-shadow:0 1px 2px rgba(0,0,0,.6);
+  text-align:right;margin-left:auto}
+/* status pills — glass, exactly like the design's tile badge.
+   app.js REPLACES className with 'badge ' + ('' | 'off' | 'wait'), so all three
+   states must be derivable from those alone. */
+.badge{pointer-events:auto;display:inline-flex;align-items:center;gap:6px;
+  font:800 9.5px/1 var(--b);letter-spacing:.05em;padding:6px 10px;border-radius:99px;
+  color:#30d158;background:linear-gradient(168deg,rgba(48,209,88,.30) 0%,rgba(48,209,88,.12) 55%,rgba(34,139,34,.20) 100%);
+  border:1px solid rgba(255,255,255,.32);text-shadow:0 1px 2px rgba(0,0,0,.6);
+  backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
+  -webkit-backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 8px 20px rgba(0,0,0,.4)}
+/* design 854: cham trang thai XANH 6px + quanh sang + nhap nhay aPulse ben trai chu LIVE;
+   textContent cua app.js ghi de noi dung -> dung ::before (song sot moi lan paintTile).
+   Chỉ trạng thái LIVE có chấm (design không có chấm cho off/wait; .t-area là đếm người). */
+.t-top .badge:not(.t-area):not(.off):not(.wait)::before{content:"";flex:none;width:6px;height:6px;
+  border-radius:50%;background:#30d158;box-shadow:0 0 8px #30d158;animation:aPulse 2s infinite}
+.t-top .badge:not(.t-area):not(.off):not(.wait) .t{animation:aPulse 2s infinite}
+.badge.wait{color:#ff9f0a;
+  background:linear-gradient(168deg,rgba(255,159,10,.30) 0%,rgba(255,159,10,.12) 55%,rgba(230,150,0,.20) 100%)}
+.badge.off{color:#ff453a;
+  background:linear-gradient(168deg,rgba(255,88,78,.30) 0%,rgba(255,88,78,.12) 55%,rgba(214,44,34,.20) 100%)}
+/* people-count badge (AreaRuleData) — violet, per the design's peeps pill */
+.badge.t-area{color:#bf5af2;
+  background:linear-gradient(168deg,rgba(191,90,242,.28),rgba(150,50,220,.12));
+  border-color:rgba(191,90,242,.50);font:800 10.5px/1 var(--b);letter-spacing:.01em;padding:5px 9px}
+/* runtime alarm badge created by ui.js markTiles() as 'badge off t-ai' */
+.badge.t-ai{animation:aAlertGlow 1.8s ease-out infinite}
+/* alarm / detection rims — the design's [data-edge-alert] treatment */
+.tile.alert{animation:none;border-color:rgba(255,88,78,.62)!important;
+  box-shadow:0 0 0 1.5px rgba(255,88,78,.5),0 0 24px rgba(255,69,58,.28),0 22px 48px rgba(0,0,0,.62)}
+.tile.detect{animation:aDetectRim 1.5s ease-in-out infinite}
+.empty{color:var(--ghost)}
+.empty .plus{color:rgba(213,194,149,.4)}
+.empty .t{font:600 13px/1.4 var(--b);color:#a1a1a6}
+
+/* ---------- pager -> design pagination ---------- */
+.pager{padding:0}
+.pg{width:30px;height:34px;border-radius:12px;background:transparent;
+  border:1px solid transparent;color:rgba(229,229,234,.62);font:600 12px/1 var(--b);
+  transition:background .16s ease,color .16s ease,transform .13s ease,filter .16s ease}
+.pg:hover{filter:brightness(1.12);transform:translateY(-1px);background:transparent}
+.pg:active{transform:scale(.9)}
+.pg.on{width:34px;height:34px;border-radius:50%;padding:0;background:var(--grad);
+  border:1px solid #96814f;color:#2a2410;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),inset 0 -2px 3px rgba(90,70,30,.22),0 2px 6px rgba(0,0,0,.3)}
+.pg.dis,.dis{opacity:.3;pointer-events:none}
+.range{font:400 11px/1 var(--m);color:var(--ghost)}
+
+/* ---------- DETAIL ---------- */
+.stage{border-radius:20px;background:#08090b;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 22px 48px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.22);
+  transition:border-color .22s ease,box-shadow .24s ease}
+.stage:hover{border-color:var(--gglow);
+  box-shadow:0 0 0 1px rgba(213,194,149,.34),0 26px 56px rgba(0,0,0,.6),0 12px 34px rgba(213,194,149,.14)}
+.stage video-stream,.stage video{border-radius:20px}
+.s-bot button{width:32px;height:32px;border-radius:11px;color:#f5f5f7;
+  background:linear-gradient(168deg,rgba(255,255,255,.16),rgba(255,255,255,.05));
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 12px rgba(0,0,0,.34);
+  transition:transform .15s cubic-bezier(.24,.8,.26,1),filter .16s ease,border-color .18s ease}
+.s-bot button:hover{filter:brightness(1.16);border-color:rgba(213,194,149,.5);transform:translateY(-1px);color:#fff}
+.s-bot button:active{transform:translateY(1px) scale(.92)}
+.live{border-radius:99px;padding:7px 11px;color:#30d158;font:800 10px/1 var(--b);letter-spacing:.08em;
+  background:linear-gradient(168deg,rgba(48,209,88,.30),rgba(34,139,34,.16));
+  border:1px solid rgba(48,209,88,.50);text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.live .dot{box-shadow:0 0 8px #30d158}
+#dLive.back{color:#2a2410;background:var(--grad);border-color:#96814f;opacity:1}
+#dLive.back .dot{background:#2a2410;animation:none;box-shadow:none}
+#dLive.back:hover{filter:brightness(1.07);color:#2a2410}
+.qual{border-radius:99px;padding:6px 10px;background:rgba(0,0,0,.44);
+  border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.82);
+  font:500 11px/1.2 var(--m);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+/* sidebar cards -> floating glass panel */
+.card{background:linear-gradient(168deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.045) 45%,rgba(213,194,149,.06) 100%);
+  border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:14px 16px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4),inset 0 -1px 0 rgba(255,255,255,.06),0 22px 46px rgba(0,0,0,.5);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1)}
+.card-h{font:700 9.5px/1 var(--b);letter-spacing:.16em;text-transform:uppercase;color:rgba(229,229,234,.5)}
+.rk{font:500 11px/1.3 var(--b);color:rgba(229,229,234,.5)}
+.rv{font:400 11.5px/1.35 var(--m);color:#d1d1d6}
+.rv.dim{color:rgba(229,229,234,.42)} .rv.none{color:#8e8e93}
+
+/* alert-history strip -> glass + design [data-hitem] cards */
+.hist-bar{height:auto;background:linear-gradient(168deg,rgba(255,255,255,.12),rgba(255,255,255,.045) 45%,rgba(213,194,149,.06));
+  border:1px solid rgba(255,255,255,.15);border-radius:18px;padding:13px 15px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 22px 46px rgba(0,0,0,.5);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1)}
+.hist-t{font:700 9.5px/1 var(--b);letter-spacing:.16em;text-transform:uppercase;color:rgba(229,229,234,.5)}
+.hist-n{font:600 10.5px/1 var(--m);color:#d5c295}
+.h-item{width:138px;aspect-ratio:16/9;height:auto;border-radius:13px;background:#101216;
+  border:1px solid rgba(255,255,255,.13);box-shadow:0 8px 20px rgba(0,0,0,.4);
+  transition:transform .22s cubic-bezier(.2,.85,.25,1),border-color .2s ease,box-shadow .22s ease}
+.h-item:hover{transform:translateY(-3px) scale(1.02);border-color:var(--gglow);
+  box-shadow:0 0 0 1px rgba(213,194,149,.4),0 14px 30px rgba(0,0,0,.5)}
+.h-item.on{border-color:#d8c186;box-shadow:0 0 0 1.5px rgba(216,193,134,.6),0 0 22px rgba(213,194,149,.3)}
+.h-item img{height:100%;aspect-ratio:16/9}
+.h-noimg{height:100%;aspect-ratio:16/9;color:rgba(229,229,234,.3);font:400 10px/1 var(--m)}
+.h-meta{position:absolute;left:8px;right:8px;bottom:7px;padding:0;background:none;
+  display:flex;flex-direction:column;gap:3px}
+.h-algo{font:600 10px/1.2 var(--b);color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.h-time{font:500 9px/1 var(--m);color:rgba(255,255,255,.72);text-shadow:0 1px 2px #000}
+.h-none{font:400 11.5px/1.5 var(--b);color:rgba(229,229,234,.4);padding:20px 4px;text-align:center}
+.h-play span{width:30px;height:30px;background:rgba(10,10,12,.5);border:1px solid rgba(213,194,149,.6);
+  color:#e6dbba;font-size:11px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.vod-msg{background:rgba(6,7,9,.6);color:var(--dim);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+
+/* ---------- CAMERA table -> design [data-camrow] ---------- */
+.thead span{font:700 9.5px/1 var(--b);letter-spacing:.14em;text-transform:uppercase;color:rgba(229,229,234,.5)}
+.thead{border-bottom:1px solid rgba(255,255,255,.08)}
+.trow{position:relative;border-bottom:1px solid rgba(255,255,255,.06);
+  transition:background .16s ease,transform .16s ease}
+.trow::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;
+  background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);
+  box-shadow:0 0 12px rgba(213,194,149,.65),0 0 2px rgba(213,194,149,.8);
+  opacity:0;transform:scaleY(.35);transform-origin:center;
+  transition:opacity .22s ease,transform .26s cubic-bezier(.2,.85,.25,1)}
+.trow:hover{background:rgba(213,194,149,.08)}
+.trow:hover::before{opacity:1;transform:scaleY(1)}
+.c-id{font:600 11.5px/1 var(--m);color:#d5c295}
+.c-nm{font:600 12.5px/1.2 var(--b);color:#f5f5f7}
+.c-md{font:400 10px/1.2 var(--m);color:rgba(229,229,234,.45)}
+.c-zone{font:400 12px/1.2 var(--b);color:#a1a1a6}
+.c-url{font:400 11px/1.2 var(--m);color:#8e8e93}
+.c-lat{font:500 11.5px/1 var(--m);text-align:center}
+.c-st{justify-self:start;display:inline-flex;align-items:center;gap:6px;font:800 10px/1 var(--b);letter-spacing:.04em;
+  color:#30d158;text-shadow:0 1px 2px rgba(0,0,0,.6);border-radius:99px;padding:5px 9px;white-space:nowrap;
+  background:linear-gradient(168deg,rgba(48,209,88,.30) 0%,rgba(48,209,88,.12) 55%,rgba(34,139,34,.20) 100%);
+  border:1px solid rgba(255,255,255,.32);
+  backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
+  -webkit-backdrop-filter:blur(20px) saturate(190%) brightness(1.14)}
+.c-st .dot{box-shadow:0 0 6px #30d158;animation:aPulse 2s infinite}
+.c-st .s{animation:aPulse 2s infinite}
+.c-st.off{color:#ff453a;
+  background:linear-gradient(168deg,rgba(255,88,78,.30) 0%,rgba(255,88,78,.12) 55%,rgba(214,44,34,.20) 100%)}
+.c-st.off .dot{background:#ff453a;box-shadow:0 0 6px #ff453a}
+/* Kết quả Quét camera: panel OVERLAY neo dưới toolbar (như design scanOpen),
+   đè lên bảng camera chứ không đẩy nó xuống. Cuộn được, ẩn thanh cuộn. */
+.discover-box{position:absolute;top:calc(100% + 8px);right:0;z-index:60;width:520px;
+  max-height:356px;margin:0;overflow:auto;padding:6px;border-radius:16px;
+  scrollbar-width:none;-ms-overflow-style:none;
+  background:linear-gradient(180deg,rgba(28,31,38,.94),rgba(18,20,25,.94));
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 22px 48px rgba(0,0,0,.55);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%);
+  animation:aFilterUp .22s cubic-bezier(.2,.85,.25,1) both}
+.discover-box::-webkit-scrollbar{display:none;width:0;height:0}
+.d-row{display:flex;align-items:center;gap:12px;height:56px;padding:0 13px;border-radius:12px;
+  border-bottom:none;background:rgba(255,255,255,.04);margin-bottom:6px;transition:background .16s ease}
+.d-row:last-child{margin-bottom:0}
+.d-row:hover{background:rgba(213,194,149,.10)}
+.d-ip{font:600 12.5px/1 var(--b);color:#f5f5f7;white-space:nowrap}
+.d-mf{flex:1;min-width:0;font:400 10.5px/1.2 var(--b);color:#8e8e93;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d-add{flex:none;justify-self:auto}
+
+/* ---------- LOG timeline: the design block above already carries .tl-*.
+   Only the bits the design lacks are authored here. ---------- */
+.tl-th{width:150px;border-radius:8px;background:#101216}
+.tl-th img{border-radius:8px}
+.tl-th .no{color:rgba(229,229,234,.3);font:400 10px/1 var(--b)}
+.tl-more{color:#d5c295;font:500 12.5px/1 var(--b)}
+/* nút "Bỏ qua" trên thẻ nhật ký — ui.js chi vẽ khi camera DANG báo động, và nó
+   biến mất ở lần vẽ lại sau khi bấm (không cần nhớ thẻ nào đã bỏ qua) */
+.tl-skip{flex:none;font:600 10px/1 var(--b);color:#ff8885;background:rgba(255,69,58,.12);
+  border:1px solid rgba(255,69,58,.42);border-radius:99px;padding:5px 10px;cursor:pointer;
+  white-space:nowrap;transition:filter .16s ease,transform .13s ease}
+.tl-skip:hover{filter:brightness(1.2)}
+.tl-skip:active{transform:scale(.92)}
+.tl-bar{background:rgba(255,255,255,.1)}
+.tl-play span{width:30px;height:30px;background:rgba(10,10,12,.5);
+  border:1px solid rgba(213,194,149,.6);color:#e6dbba;font-size:11px;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.tl-row:hover .tl-th .tl-play{opacity:1}
+
+/* ---------- SETTINGS / ALGO tables ---------- */
+.field label{font:600 9.5px/1 var(--b);letter-spacing:.12em;text-transform:uppercase;color:rgba(229,229,234,.45)}
+.field input,.field select{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);
+  border-radius:12px;padding:11px 12px;color:#f5f5f7;font:400 12.5px/1.2 var(--m);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.25),inset 0 -1px 0 rgba(255,255,255,.05);
+  transition:border-color .16s ease,box-shadow .16s ease}
+.field input:focus,.field select:focus{border-color:#d5c295;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.2),0 0 0 3px rgba(213,194,149,.18)}
+/* Dropdown native: kéo option theo dark theme (Windows hiển thị đen/trắng nếu thiếu) */
+.field select option{background:#181a20;color:#f5f5f7;font:400 12.5px/1.2 var(--m)}
+.field input.mono{font-family:var(--m);font-size:12px}
+.hint{font:400 10px/1.4 var(--m);color:rgba(229,229,234,.38)}
+.hint{font:400 10px/1.4 var(--m);color:rgba(229,229,234,.38)}
+.cn-state{position:absolute;right:0;top:50%;transform:translateY(-50%);
+  font:400 11.5px/1.5 var(--m);color:rgba(229,229,234,.5);white-space:pre-line;
+  text-align:right}
+.cn-state.ok{color:var(--ok)} .cn-state.err{color:var(--err)}
+/* Telegram: card chi con Token + "Quét nhóm", mọi thứ khác vao panel tvoi. */
+.tg-chip{flex:none;height:38px;display:inline-flex;align-items:center;padding:0 12px;border-radius:99px;
+  font:600 11px/1 var(--b);color:rgba(229,229,234,.55);background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);white-space:nowrap}
+.tg-chip.ok{color:#30d158;border-color:rgba(48,209,88,.4);background:rgba(48,209,88,.12)}
+.tg-chip.err{color:#ff9f0a;border-color:rgba(255,159,10,.4);background:rgba(255,159,10,.12)}
+.tg-panel{position:fixed;z-index:140;width:min(460px,calc(100vw - 32px));
+  padding:14px;border-radius:16px;background:rgba(18,22,28,.96);border:1px solid rgba(255,255,255,.15);
+  box-shadow:0 22px 54px rgba(0,0,0,.62);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.tg-panel-h{font:600 12px/1 var(--b);color:var(--dim);margin-bottom:10px}
+.tg-groups{max-height:260px;overflow-y:auto}
+.tg-panel-f{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.notif-card{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06);transition:background .14s ease}
+.notif-card:last-child{border-bottom:none}
+.notif-card:hover{background:rgba(213,194,149,.1)}
+.notif-dot{flex:none;width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
+.notif-unread{flex:none;display:inline-flex;align-items:center;margin-left:auto;
+  font:800 9px/1 var(--b);letter-spacing:.05em;padding:5px 8px;border-radius:99px;
+  color:#ff453a;background:linear-gradient(168deg,rgba(255,88,78,.30) 0%,rgba(255,88,78,.12) 55%,rgba(214,44,34,.20) 100%);
+  border:1px solid rgba(255,255,255,.32);text-shadow:0 1px 2px rgba(0,0,0,.6);
+  backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
+  -webkit-backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 8px 20px rgba(0,0,0,.4)}
+.notif-b{flex:1;min-width:0}
+.notif-t{font:600 13px/1.3 var(--b);color:#f5f5f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notif-s{font:400 10.5px/1.3 var(--m);color:rgba(229,229,234,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.notif-empty{padding:20px 14px;text-align:center;font:400 12px/1.4 var(--m);color:rgba(229,229,234,.45)}
+/* Highlight thẻ vừa chọn trong nhật ký: vàng dock + nháy viền */
+.tl-row.hl{background:rgba(213,194,149,.16)}
+.tl-row.hl::before{left:0;opacity:1;transform:scaleY(1)}
+@keyframes tlHlFlash{0%{box-shadow:inset 0 0 0 2px rgba(213,194,149,.9)}100%{box-shadow:inset 0 0 0 2px rgba(213,194,149,0)}}
+.tl-row.hl{animation:tlHlFlash 1.6s ease-out 2}
+.al-cnt{font:600 11.5px/1 var(--m);color:#d5c295}
+.al-cnt.full{color:var(--warn)}
+.al-thead,.al-cat-h{background:rgba(255,255,255,.045)}
+.al-thead{border:1px solid rgba(255,255,255,.15);border-radius:16px 16px 0 0}
+.al-thead>span{font:700 9.5px/1 var(--b);letter-spacing:.14em;text-transform:uppercase;color:rgba(229,229,234,.38)}
+.al-thead>span:first-child{border-right:1px solid rgba(255,255,255,.09)}
+#alCats{border:1px solid rgba(255,255,255,.15);border-radius:0 0 16px 16px}
+.al-cat{border-top:1px solid rgba(255,255,255,.06)}
+.al-cat-h{border-right:1px solid rgba(255,255,255,.06)}
+.al-cat-n{font:600 12.5px/1.25 var(--b);color:#f5f5f7}
+.al-cat-c{font:400 10px/1 var(--m);color:rgba(229,229,234,.4)}
+.al-item{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:13px;
+  padding:11px 12px;transition:transform .16s ease,border-color .18s ease,background .18s ease,box-shadow .2s ease,opacity .18s ease}
+.al-item:hover{transform:translateY(-2px);border-color:rgba(213,194,149,.4);box-shadow:0 8px 20px rgba(0,0,0,.36)}
+.al-item.on{background:linear-gradient(165deg,rgba(213,194,149,.22),rgba(213,194,149,.07));
+  border-color:rgba(213,194,149,.52);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 0 18px rgba(213,194,149,.15)}
+.al-item.dis{opacity:.32}
+.al-box{width:17px;height:17px;border-radius:6px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.24)}
+.al-item.on .al-box{background:linear-gradient(180deg,#e6dbba,#cdb98a);border-color:#96814f}
+.al-item.on .al-box::after,.obj-item.on .obj-box::after{
+  border-left-color:#2a2410;border-bottom-color:#2a2410}
+.al-nm{font:500 11.5px/1.25 var(--b);color:#a1a1a6}
+.al-item.on .al-nm{color:#f5f5f7}
+.al-load,.ai-load{font:400 11px/1.5 var(--m);color:rgba(229,229,234,.42)}
+
+/* ---------- AI panel: fn tabs, zones, right column ---------- */
+.fn-tabs{border-bottom:1px solid rgba(255,255,255,.08);gap:8px}
+.fn-tab{height:35px;padding:0 11px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);margin-bottom:0;
+  transition:transform .16s ease,border-color .18s ease,box-shadow .2s ease,filter .18s ease}
+.fn-tab:hover{transform:translateY(-1px);filter:brightness(1.12)}
+.fn-tab:active{transform:translateY(0) scale(.97)}
+.fn-tab .d{box-shadow:0 0 9px currentColor}
+.fn-tab .l{font:600 12px/1 var(--b);color:#e5e5ea}
+.fn-tab .x{font:600 10px/1 var(--b);color:#e5e5ea;width:16px;height:16px;border-radius:50%;
+  display:grid;place-items:center;opacity:.5;transition:opacity .16s ease,background .16s ease}
+.fn-tab:hover .x{opacity:1;background:rgba(255,69,58,.3);color:#e5e5ea}
+.fn-tab.on{background:var(--grad);border:1px solid #96814f;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.2),0 4px 14px rgba(213,194,149,.28)}
+.fn-tab.on .l{color:#2a2410}
+.fn-tab.on .x{color:rgba(42,36,16,.55)}
+.fn-tab.on:hover .x{background:rgba(255,69,58,.35);color:#2a2410}
+.fn-add{height:35px;padding:0 11px;border-radius:12px;background:rgba(213,194,149,.06);
+  border:1px dashed rgba(213,194,149,.42);margin:0}
+.fn-add .p,.fn-add .t{color:#d5c295}
+.fn-add .p{font:600 15px/1 var(--b)}
+.fn-add .t{font:600 12px/1 var(--b)}
+.fn-none{font:400 11px/1.5 var(--b);color:rgba(229,229,234,.42)}
+.ai-shot{border-radius:18px;background:#08090b;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 16px 36px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2)}
+.ai-shot video-stream video{background:#08090b}
+.ai-q{background:rgba(0,0,0,.44);border:1px solid rgba(255,255,255,.24);border-radius:99px;
+  padding:7px 11px;color:#fff;font:600 10px/1 var(--b);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.zone-list{gap:7px}
+.zone{border-radius:12px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);
+  padding:10px 12px;transition:background .16s ease,border-color .18s ease,transform .16s ease}
+.zone:hover{background:rgba(213,194,149,.08);border-color:rgba(213,194,149,.3);transform:translateX(2px)}
+.zone.on{background:rgba(213,194,149,.13);border-color:rgba(213,194,149,.48)}
+.zone .sw{width:11px;height:11px;border-radius:4px}
+.zone .nm{font:600 12px/1 var(--b);color:#f5f5f7}
+.zone.on .nm{color:#f5f5f7}
+.zone .mt{font:400 10.5px/1.2 var(--m);color:rgba(229,229,234,.45)}
+.zone .act{font:600 10.5px/1 var(--b);color:#d5c295;background:rgba(213,194,149,.12);
+  border:1px solid rgba(213,194,149,.28);border-radius:9px;padding:7px 10px;
+  transition:filter .16s ease,transform .14s ease,background .16s ease}
+.zone .act:hover{filter:brightness(1.18);background:rgba(213,194,149,.2);color:#d5c295}
+.zone .act:active{transform:scale(.94)}
+.zone .act.rm{color:#ff8a84;background:rgba(255,69,58,.14);border-color:rgba(255,69,58,.3)}
+.zone .act.rm:hover{background:rgba(255,69,58,.24);color:#ff8a84}
+.zone-none{font:400 11.5px/1.5 var(--b);color:rgba(229,229,234,.42)}
+.ai-right{background:linear-gradient(168deg,rgba(255,255,255,.12),rgba(255,255,255,.045) 45%,rgba(213,194,149,.06));
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 22px 46px rgba(0,0,0,.5);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1)}
+.cfg-tabs{gap:3px;padding:3px;border-radius:13px;border-bottom:none;
+  background:linear-gradient(165deg,rgba(255,255,255,.1),rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 8px 20px rgba(0,0,0,.32)}
+.cfg-tabs button{border-radius:10px;padding:9px 14px;font:600 12px/1 var(--b);color:#e5e5ea;
+  transition:background .18s ease,color .18s ease,transform .14s ease,filter .16s ease}
+.cfg-tabs button:hover{filter:brightness(1.12);background:transparent}
+.cfg-tabs button:active{transform:scale(.96)}
+.cfg-tabs button.on{background:var(--grad);color:#2a2410;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.18)}
+.cfg-h{font:700 9.5px/1 var(--b);letter-spacing:.16em;text-transform:uppercase;color:rgba(229,229,234,.5)}
+.cfg-sep{background:rgba(255,255,255,.08)}
+.cfg-lb .l{font:600 12px/1.25 var(--b);color:#f5f5f7}
+.cfg-lb .h{font:400 10px/1.3 var(--m);color:rgba(229,229,234,.42)}
+.spin{height:33px;border-radius:11px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
+.spin button{width:31px;color:#d5c295;font:600 15px/1 var(--b);
+  transition:background .15s ease,transform .12s ease}
+.spin button:hover{background:rgba(213,194,149,.18);color:#d5c295}
+.spin button:active{transform:scale(.86)}
+.spin .v{font:600 12.5px/1 var(--m);color:#f5f5f7;
+  border-left:1px solid rgba(255,255,255,.1);border-right:1px solid rgba(255,255,255,.1)}
+.cfg-sz-g>.l{font:600 11px/1.2 var(--b);color:#d1d1d6}
+.cfg-ax>.a{font:500 9.5px/1 var(--m);color:rgba(229,229,234,.45)}
+.obj-head{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:11px}
+.obj-head.open{border-color:rgba(213,194,149,.5)}
+.obj-chip{background:rgba(213,194,149,.12);border:1px solid rgba(213,194,149,.28);
+  border-radius:9px;color:#d5c295;font:600 10.5px/1 var(--b)}
+.obj-chip.none{color:rgba(229,229,234,.4);background:transparent;border-color:transparent}
+.obj-caret{color:rgba(229,229,234,.4)}
+.obj-menu{background:linear-gradient(180deg,rgba(28,31,38,.94),rgba(18,20,25,.94));
+  border:1px solid rgba(255,255,255,.18);border-radius:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 18px 40px rgba(0,0,0,.55);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%)}
+.obj-item{border-radius:10px}
+.obj-item:hover,.obj-item.on{background:rgba(213,194,149,.12)}
+.obj-box{border-radius:6px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.24)}
+.obj-item.on .obj-box{background:linear-gradient(180deg,#e6dbba,#cdb98a);border-color:#96814f}
+.obj-item .l{font:500 11.5px/1.25 var(--b);color:#a1a1a6}
+.obj-item.on .l{color:#f5f5f7}
+.sw-row{border-radius:12px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);
+  padding:11px 12px;transition:background .16s ease,border-color .18s ease}
+.sw-row:hover{background:rgba(213,194,149,.07);border-color:rgba(213,194,149,.24)}
+.sw-row.on{background:rgba(213,194,149,.10);border-color:rgba(213,194,149,.34)}
+.sw-row .l{font:600 12px/1.25 var(--b);color:#f5f5f7}
+.sw-row .m{font:400 10px/1.3 var(--m);color:rgba(229,229,234,.42)}
+.sw-tr{width:46px;height:27px;border-radius:99px;
+  background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.035));
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.42),inset 0 -1px 0 rgba(255,255,255,.06);
+  transition:background .24s ease,border-color .24s ease,box-shadow .24s ease}
+.sw-row.on .sw-tr{background:var(--grad);border-color:#96814f;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -1px 2px rgba(90,70,30,.2),0 0 16px rgba(213,194,149,.36)}
+.sw-kn{top:2px;left:2px;width:21px;height:21px;background:linear-gradient(180deg,#fbfbfd,#c8c8ce);
+  box-shadow:0 1px 3px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.8);
+  transition:transform .28s cubic-bezier(.2,.85,.25,1),background .24s ease}
+.sw-row.on .sw-kn{background:linear-gradient(180deg,#3b3220,#241f0e);transform:translateX(19px)}
+.sc-preset{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:99px;
+  padding:8px 11px;color:#e5e5ea;font:600 11px/1 var(--b);
+  transition:filter .16s ease,transform .14s ease}
+.sc-preset:hover{filter:brightness(1.12);transform:translateY(-1px);border-color:rgba(213,194,149,.34);color:#e5e5ea}
+.sc-axis .hh{font:500 8.5px/1 var(--m);color:rgba(229,229,234,.4)}
+.sc-day{width:38px;height:20px;border-radius:7px;display:grid;place-items:center;
+  border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);
+  font:600 10.5px/1 var(--b);color:#a1a1a6;
+  transition:background .16s ease,color .16s ease,border-color .16s ease,transform .14s ease}
+.sc-day:hover{background:rgba(213,194,149,.16);color:#e6dbba;border-color:rgba(213,194,149,.34)}
+.sc-day:active{transform:scale(.93)}
+.sc-cell{height:19px;border-radius:4px;background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.06);
+  transition:background .16s ease,box-shadow .2s ease,transform .12s ease}
+.sc-cell:hover{transform:scaleY(1.2);background:rgba(213,194,149,.22);outline:none}
+.sc-cell.on{background:linear-gradient(180deg,#e6dbba 0%,#cdb98a 100%);
+  border-color:rgba(150,129,79,.75);box-shadow:0 0 9px rgba(213,194,149,.4)}
+.sc-sum{font:400 10.5px/1.55 var(--b);color:rgba(229,229,234,.45)}
+
+/* ---------- algorithm picker popup ---------- */
+.fp-cap{background:rgba(255,255,255,.028);border-bottom:1px solid rgba(255,255,255,.07)}
+.fp-cap-k{font:700 9px/1 var(--b);letter-spacing:.14em;text-transform:uppercase;color:rgba(229,229,234,.5)}
+.fp-cap-v{font:700 16px/1 var(--m);color:#d5c295}
+.fp-cap-v.warn{color:#ff9f0a} .fp-cap-v.err{color:#ff6b61}
+.fp-bar{width:150px;height:6px;border-radius:99px;background:rgba(255,255,255,.1)}
+.fp-bar i{background:linear-gradient(90deg,#cdb98a,#f0e4c2)}
+.fp-bar i.warn{background:linear-gradient(90deg,#c97a06,#ffd28a)}
+.fp-bar i.err{background:linear-gradient(90deg,#d62c22,#ff8a80)}
+
+/* ---------- modals -> the design's [data-overlay] / [data-modal] ---------- */
+.overlay{z-index:150;background:rgba(6,7,9,.6);
+  backdrop-filter:blur(12px) saturate(120%);-webkit-backdrop-filter:blur(12px) saturate(120%);
+  animation:aFadeIn .2s ease both}
+.modal{border-radius:24px;background:linear-gradient(168deg,rgba(24,27,33,.94),rgba(16,18,22,.94));
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 30px 70px rgba(0,0,0,.7);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.1);
+  animation:aModalIn .3s cubic-bezier(.2,.85,.25,1) both}
+.m-head{border-bottom:1px solid rgba(255,255,255,.09);padding:18px 20px 15px}
+.m-title{font:700 17px/1.2 var(--b);letter-spacing:-.01em;color:#fff}
+.m-x{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.13);
+  color:rgba(229,229,234,.7);font:400 13px/1 var(--b);
+  transition:background .16s ease,color .16s ease,transform .2s ease,border-color .16s ease}
+.m-x:hover{background:rgba(255,69,58,.24);border-color:rgba(255,69,58,.4);color:#fff;transform:rotate(90deg)}
+.m-body{padding:18px 20px;gap:20px}
+.m-foot{border-top:1px solid rgba(255,255,255,.09);padding:14px 20px}
+.preview{border-radius:18px;background:#08090b;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 16px 36px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2)}
+.preview .msg{font:500 11.5px/1.4 var(--m);color:rgba(229,229,234,.42)}
+
+/* ---------- header / nav: the new markup styles these inline, but the legacy
+   element rules would otherwise paint a 70px slate bar underneath. ---------- */
+header{height:82px;padding:0 28px;background:transparent;border-bottom:none}
+nav{position:static;transform:none;left:auto}
+nav button{width:46px;height:42px;border-radius:16px}
+nav button:hover,nav button.on{background:transparent}
+.chip{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:12px}
+.chip .v{color:#d5c295}
+.avatar{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);color:#d5c295}
+.stat{font:500 12px/1 var(--b)}
+.stat .dot{width:6px;height:6px}
+#clock{font:500 13.5px/1 var(--m);color:#f5f5f7;font-variant-numeric:tabular-nums}
+.bar{border-bottom:none;padding:0}
+.h1{font:700 24px/1.1 var(--b);letter-spacing:-.02em;color:#fff}
+.sub{font:400 12px/1 var(--m);color:#8e8e93}
+.brand{font:700 21px/1 var(--b);letter-spacing:-.02em;text-transform:none;color:#f5f5f7}
+.brand-sub{font:400 14.5px/1 var(--b);letter-spacing:0;text-transform:none;color:#8e8e93}
+.logo{width:44px;height:44px;background:url(assets/logo-diamond-transparent.png) center/contain no-repeat}
+.vr{background:rgba(255,255,255,.12)}
+
+/* ---------- LIBRARY (new screen, no legacy counterpart) ---------- */
+.lib-panel{display:flex;flex-direction:column;gap:14px;min-height:100%;
+  border-radius:20px;padding:18px;
+  background:linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,.045) 42%,rgba(213,194,149,.06) 100%);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.30),0 20px 42px rgba(0,0,0,.35);
+  backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.08);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(180%) brightness(1.08)}
+.lib-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(184px,1fr))}
+.lib-card{position:relative;border-radius:18px;overflow:hidden;
+  background:linear-gradient(168deg,rgba(255,255,255,.14) 0%,rgba(255,255,255,.055) 42%,rgba(213,194,149,.07) 100%);
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 20px 42px rgba(0,0,0,.48);
+  backdrop-filter:blur(var(--glass-blur)) saturate(190%) brightness(1.14);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(190%) brightness(1.14);
+  cursor:pointer;transition:transform .26s cubic-bezier(.2,.85,.25,1),border-color .18s ease,box-shadow .22s ease}
+.lib-card:hover{transform:translateY(-4px);border-color:rgba(213,194,149,.7);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 0 0 1px rgba(213,194,149,.3),0 18px 38px rgba(0,0,0,.55)}
+.lib-img{position:relative;aspect-ratio:4/5;background:#101216 center/cover no-repeat;overflow:hidden}
+.lib-img::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(0,0,0,.35),transparent 34%,transparent 62%,rgba(0,0,0,.7))}
+.lib-kind{position:absolute;top:9px;left:10px;z-index:2;display:inline-flex;align-items:center;gap:6px;
+  font:700 9.5px/1 var(--b);letter-spacing:.06em;border-radius:99px;padding:6px 10px;white-space:nowrap;
+  background:rgba(255,255,255,.06);border:1px solid;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.lib-kind i{width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.lib-play{position:absolute;top:50%;left:50%;z-index:2;transform:translate(-50%,-50%) scale(.86);
+  display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+  background:rgba(10,10,12,.5);border:1px solid rgba(213,194,149,.6);opacity:.85;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:opacity .18s ease,transform .22s cubic-bezier(.2,.85,.25,1)}
+.lib-card:hover .lib-play{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.lib-meta{padding:10px 12px 12px;display:flex;flex-direction:column;gap:3px}
+.lib-name{font:600 13px/1.25 var(--b);color:#f5f5f7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-sub{font:400 10.5px/1.3 var(--m);color:#8e8e93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  flex:1;padding:74px 20px;border-radius:20px;
+  background:linear-gradient(168deg,rgba(255,255,255,.14) 0%,rgba(255,255,255,.055) 42%,rgba(213,194,149,.07) 100%);
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 20px 42px rgba(0,0,0,.48);
+  backdrop-filter:blur(var(--glass-blur)) saturate(190%) brightness(1.14);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(190%) brightness(1.14)}
+.lib-empty .t1{font:600 14px/1.3 var(--b);color:#a1a1a6}
+.lib-empty .t2{font:400 12px/1.5 var(--m);color:rgba(229,229,234,.45);text-align:center}
+
+/* ---------- aurora backdrop (authored in markup; kept here so the blobs sit
+   behind everything without an inline z-index fight) ---------- */
+.aurora{position:absolute;pointer-events:none;z-index:0;filter:blur(46px)}
+.aurora.a{top:-160px;left:-80px;width:520px;height:520px;
+  background:radial-gradient(circle at 50% 50%,rgba(230,219,186,.16),rgba(214,185,138,.07) 45%,transparent 72%);
+  animation:lgAuroraA 26s ease-in-out infinite}
+.aurora.b{top:30%;right:-120px;width:480px;height:480px;filter:blur(48px);
+  background:radial-gradient(circle at 50% 50%,rgba(120,140,200,.14),rgba(90,110,170,.06) 45%,transparent 70%);
+  animation:lgAuroraB 32s ease-in-out infinite}
+.aurora.c{bottom:-140px;left:34%;width:560px;height:520px;filter:blur(50px);
+  background:radial-gradient(circle at 50% 50%,rgba(213,194,149,.13),rgba(60,70,110,.06) 46%,transparent 72%);
+  animation:lgAuroraC 38s ease-in-out infinite}
+.aurora.vig{inset:0;filter:none;
+  background:radial-gradient(90% 70% at 50% 100%,transparent 40%,rgba(0,0,0,.55) 100%)}
+
+/* ============================================================================
+   HEADER DOCK + LANGUAGE SWITCH
+   The design drives these with inline styles computed in renderVals()
+   (btnScale / iconFg / fg / langThumbShift). Vanilla JS toggles a class
+   instead, so the same visual states live here.
+   app.js contract: `$$('nav button')` + `.on` toggled by data-go — these MUST
+   stay <button> elements inside <nav>.
+   ============================================================================ */
+nav[data-dock] button[data-dockitem]{position:relative;z-index:2;width:46px;height:42px;padding:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  border:none;background:transparent;border-radius:16px;cursor:pointer;
+  transition:transform .26s cubic-bezier(.2,.85,.25,1)}
+nav[data-dock] button[data-dockitem]:hover{transform:scale(1.08);background:transparent}
+nav[data-dock] button[data-dockitem]:active{transform:scale(.94)}
+nav[data-dock] [data-dock-icon]{position:relative;display:grid;place-items:center;
+  transition:transform .24s cubic-bezier(.2,.85,.25,1)}
+nav[data-dock] [data-dockgold]{position:absolute;top:50%;left:50%;width:44px;height:44px;
+  border-radius:50%;z-index:0;overflow:hidden;border:1px solid #96814f;
+  transform:translate(-50%,-50%) scale(0);
+  background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.22),0 1px 4px rgba(0,0,0,.28);
+  transition:transform .15s cubic-bezier(.24,.8,.26,1),filter .16s ease}
+nav[data-dock] button.on [data-dockgold]{transform:translate(-50%,-50%) scale(1)}
+nav[data-dock] button[data-dockitem]:hover [data-dockgold]{filter:brightness(1.12);
+  box-shadow:0 0 0 1px rgba(213,194,149,.55),0 0 18px rgba(213,194,149,.4),
+    inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.22),0 2px 6px rgba(0,0,0,.28)}
+nav[data-dock] [data-dockgold]::after{content:"";position:absolute;top:0;bottom:0;left:0;width:46%;
+  border-radius:inherit;pointer-events:none;opacity:0;
+  background:linear-gradient(115deg,transparent,rgba(255,255,255,.55),transparent);
+  transform:translateX(-150%) skewX(-16deg)}
+nav[data-dock] button[data-dockitem]:hover [data-dockgold]::after{animation:lgBtnSheen .95s cubic-bezier(.22,.8,.3,1) forwards}
+nav[data-dock] button svg{width:26px;height:26px;position:relative;z-index:10;fill:none;
+  stroke:#e5e5ea;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;
+  transform:translateZ(0);transition:stroke .2s ease}
+nav[data-dock] button.on svg{stroke:#2a2410}
+nav[data-dock] button:not(.on):hover svg{stroke:#d5c295}
+/* the design keeps dock labels permanently hidden (opacity:0, nothing ever
+   raises it) — reproduced 1:1; <button title> carries the affordance instead. */
+nav[data-dock] [data-dock-label]{position:absolute;bottom:4px;left:50%;margin-left:-30px;width:60px;
+  text-align:center;font:600 9.5px/1 var(--b);color:#e5e5ea;white-space:nowrap;
+  opacity:0;transform:translateY(4px) scale(.9);
+  transition:opacity .2s ease,transform .24s cubic-bezier(.2,.85,.25,1)}
+/* unread-alarm badge on the Nhật ký tab */
+/* Neo canh TRAI (khong phai right:-5px): chu dai them thi no ve PHAI.
+   left:calc(100% - 10px) giu nguyen vi tri cu khi 1 chu so (min-width 15px
+   -> canh phai = 100% + 5px, dung bang right:-5px cu). */
+nav[data-dock] .badge{position:absolute;top:-2px;left:calc(100% - 10px);z-index:20;min-width:18px;min-height:15px;height:auto;
+  display:inline-flex;align-items:center;justify-content:center;padding:2px 6px;border-radius:99px;
+  font:700 9.5px/1.2 var(--b);color:#fff;background:#ff453a;
+  border:1.5px solid rgba(20,20,22,.9);text-shadow:none;
+  box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+  animation:aAlertGlow 1.8s ease-out infinite}
+
+/* ---------- language switch: sliding gold thumb, driven by [data-lang] ----------
+   translate (not transform) so hover scale composes about the thumb's own centre —
+   with `transform` the scale would be applied about the untranslated origin and the
+   thumb would land ~3.5px right of the EN label. */
+[data-langswitch]{position:relative;display:flex;align-items:center;justify-content:center;
+  flex:none;height:54px;padding:5px;border-radius:26px;cursor:pointer;
+  background:linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%);
+  border:1px solid rgba(213,194,149,.34);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)}
+[data-langthumb]{position:absolute;top:5px;left:5px;width:44px;height:44px;border-radius:50%;
+  border:1px solid #96814f;translate:0 0;
+  background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.22),0 2px 6px rgba(0,0,0,.28);
+  transition:translate .3s cubic-bezier(.2,.8,.25,1),scale .18s cubic-bezier(.24,.8,.26,1),filter .18s ease}
+[data-langswitch][data-lang="en"] [data-langthumb]{translate:44px 0}
+[data-langswitch] > span:not([data-langthumb]){flex:none;position:relative;z-index:2;display:grid;
+  place-items:center;width:44px;height:44px;border-radius:50%;
+  font:700 12px/1 var(--b);letter-spacing:.06em;cursor:pointer;
+  color:rgba(229,229,234,.78);transition:color .2s ease,transform .14s cubic-bezier(.24,.8,.26,1)}
+[data-langswitch][data-lang="vi"] > span[data-l="vi"],
+[data-langswitch][data-lang="en"] > span[data-l="en"]{color:#2a2410}
+
+/* ---------- header status block ---------- */
+.hstat{flex:none;display:inline-flex;flex-direction:column;align-items:flex-start;
+  justify-content:center;gap:4px;height:48px;min-width:0;overflow:hidden}
+.hstat-r{flex:none;display:flex;align-items:center;gap:10px;height:22px;min-width:0}
+.hdot{flex:none;width:6px;height:6px;border-radius:50%;background:#30d158;animation:aPulse 2s infinite}
+.hdot.off{background:#ff453a;box-shadow:0 0 8px rgba(255,69,58,.6)}
+.hdot.warn{background:#ff9f0a}
+#dGo,#dBox{width:6px;height:6px;border-radius:50%;flex:none}
+#dGo{background:#30d158;animation:aPulse 2s infinite}
+#dBox{background:#30d158;animation:aPulse 2s infinite}
+.h-online{flex:none;font:500 12px/1 var(--b);color:#30d158;white-space:nowrap}
+.h-clock{flex:none;min-width:58px;text-align:right;font:500 13.5px/1 var(--m);
+  font-variant-numeric:tabular-nums;color:#f5f5f7;white-space:nowrap}
+.h-box{min-width:0;font:500 11.5px/1 var(--b);color:#30d158;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.h-div{flex:none;width:1px;height:12px;background:rgba(255,255,255,.18)}
+.h-vr{flex:none;width:1px;height:26px;background:rgba(255,255,255,.12)}
+
+/* ---------- view toolbar: the design's glass pill frame ---------- */
+.tb{flex:none;display:flex;align-items:center;gap:2px;padding:5px;height:48px;border-radius:22px;
+  background:linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%);
+  border:1px solid rgba(213,194,149,.34);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)}
+.tb-div{flex:none;width:1px;height:22px;background:rgba(255,255,255,.14);margin:0 3px}
+/* Toolbar live thu nhỏ: container cùng pager nhỏ gọn hơn .tb mặc định. */
+.cam-tb{height:38px;padding:4px;border-radius:18px}
+.cam-tb .tb-div{height:17px;margin:0 2px}
+.cam-tb [data-pgctrl][data-pg-dir],
+.cam-tb [data-pgctrl][data-pg-chip]{width:26px !important;height:27px !important;font-size:12px}
+.cam-tb #pgNums{font-size:11.5px}
+.view-h{font:700 24px/1.1 var(--b);letter-spacing:-.02em;color:#fff}
+.view-h2{font:700 22px/1.1 var(--b);letter-spacing:-.02em;color:#fff;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.view-sub{font:400 12px/1 var(--m);color:#8e8e93;white-space:nowrap}
+.view-wrap{position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;
+  padding:16px 20px 20px}
+
+/* ---------- capacity chip (Camera + AI headers) ---------- */
+.cap{flex:none;display:flex;align-items:center;gap:10px;border-radius:14px;padding:9px 14px;
+  background:linear-gradient(168deg,rgba(255,255,255,.14) 0%,rgba(255,255,255,.055) 42%,rgba(213,194,149,.07) 100%);
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 12px 26px rgba(0,0,0,.4);
+  backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%)}
+.cap-k{font:700 9px/1 var(--b);letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(229,229,234,.5);white-space:nowrap}
+.cap-v{font:700 14px/1 var(--m);color:#d5c295}
+.cap-bar{width:74px;height:5px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
+.cap-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#cdb98a,#f0e4c2);
+  transition:width .3s ease}
+.cap-bar i.warn{background:linear-gradient(90deg,#c97a06,#ffd28a)}
+.cap-bar i.err{background:linear-gradient(90deg,#d62c22,#ff8a80)}
+
+/* ============================================================================
+   PORT FIXUPS — things the design expresses with inline styles computed in
+   renderVals(), or that only exist because real video replaces the demo stills.
+   ============================================================================ */
+
+/* Pagination arrows: the design sizes/colours these inline; here they are the
+   ‹ › buttons app.js toggles .dis on. */
+[data-pgctrl][data-pg-dir]{flex:none;display:grid;place-items:center;width:30px;height:34px;
+  padding:0;border:none;border-radius:12px;background:transparent;cursor:pointer;
+  font:600 16px/1 var(--b);color:#e6dbba}
+[data-pgctrl][data-pg-dir].dis{color:rgba(229,229,234,.3);cursor:default}
+[data-pgctrl][data-pg-chip]{flex:none;display:grid;place-items:center;min-width:30px;height:34px;
+  padding:0 8px;border:none;border-radius:12px;cursor:pointer;font:600 12px/1 var(--b)}
+
+/* LIVE grid fills the viewport height like the design (rows = repeat(cols,1fr),
+   set by app.js drawGrid) so all cameras fit on screen without scrolling.
+   aspect-ratio is dropped here on purpose — but min-height:120px is the design's
+   own safety net and MUST stay: it is what guarantees <video-stream> has a
+   non-zero box, so its IntersectionObserver (threshold 0.01) can fire.
+   Zero area => stream idles forever, no console error. */
+#grid > .tile{aspect-ratio:auto;height:100%;min-height:120px}
+
+/* view containers hide their scrollbar, like the design's data-no-scrollbar */
+.view-wrap{overflow:auto;scrollbar-width:none;-ms-overflow-style:none}
+.view-wrap::-webkit-scrollbar{display:none;width:0;height:0}
+
+/* camera table needs the design's wider fixed columns (52 + 300 + 88 + 170) */
+.tbl{min-width:1040px}
+.thead,.trow{grid-template-columns:52px minmax(0,1.1fr) minmax(0,.8fr) minmax(0,1.2fr) 300px 88px 170px;
+  gap:12px}
+
+/* detail sidebar: the merged RTSP+session card must not grow, the AI card must */
+#v-detail aside > .card:first-child{flex:none}
+
+/* the AI card's algo list scrolls inside a glass panel that must not collapse:
+   [data-glass]{overflow:hidden} makes a flex item's min-height:auto resolve to 0,
+   so anything meant to keep its size needs an explicit flex:none. */
+#dAlgos{flex:1 1 auto;min-height:0}
+
+/* ai-shot: flex:1 in the left column, canvas + video host must stay pixel-identical */
+#aiStage{flex:1;min-height:0}
+
+/* history strip: full-width row of the split grid, fixed content height */
+.hist-bar{flex:none}
+
+/* ---------- nut "Cấu hình AI" trong bảng camera: pill vàng CÓ CHỮ (design) ---------- */
+/* mau/vien/bong/hover lay tu [data-goldbtn] cua design; o day chi de kich thuoc */
+.c-aibtn{gap:6px;height:28px;padding:0 10px;border-radius:9px;font:600 10.5px/1 var(--b)}
+.c-aibtn svg{width:12px;height:12px;fill:none;stroke:#2a2410;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- dòng kết quả Quét camera: 2 dòng + pill Thêm (design scanOpen) ---------- */
+.d-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.d-l1{display:flex;align-items:center;gap:8px}
+.d-st{font:500 10px/1 var(--m);color:#d5c295;white-space:nowrap}
+.d-l2{font:400 10.5px/1.2 var(--b);color:#8e8e93;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.d-add{flex:none;height:32px;padding:0 14px;border-radius:10px;border:1px solid #96814f;
+  background:var(--grad);color:#2a2410;font:600 11px/1 var(--b);cursor:pointer;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -1px 2px rgba(90,70,30,.2),0 1px 4px rgba(0,0,0,.28);
+  transition:filter .16s ease,transform .14s ease}
+.d-add:hover{filter:brightness(1.08)}
+.d-add:active{transform:scale(.95)}
+
+/* ---------- Live: rail trai danh sach camera + khoi chua luoi/lich su ----------
+   Rail cuon doc (du 16 the), card kinh nhe; bam card mo chi tiet camera do.
+   Thanh lich su #hist2 o day la ban toan box (moi camera), khac #hist o detail
+   (chi camera dang focus). */
+.live-split{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+.live-cols{flex:1;min-height:0;display:flex;gap:14px}
+.live-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.live-split > .bar{flex:none}
+.cam-rail{flex:none;width:308px;box-sizing:border-box;display:flex;flex-direction:column;
+  gap:10px;border-radius:18px;padding:12px;overflow:visible}
+/* Toolbar lưới được gom vào rail cho gọn: bỏ nền khung .tb, để hàng nhỏ, nút
+   "Làm mới" chỉ còn icon, cho phép wrap khi hẹp. */
+.cam-rail .tb{background:none;border:0;box-shadow:none;border-radius:0;padding:0;height:auto;
+  flex-wrap:wrap;gap:6px}
+.cam-rail .tb .tb-div{display:none}
+.cam-rail #layoutBtn,.cam-rail #fBtn{height:27px !important;padding:0 9px !important;
+  border-radius:9px !important;font-size:11px !important}
+.cam-rail #layoutBtn svg,.cam-rail #fBtn svg,.cam-rail #camRefresh svg{width:11px !important;height:11px !important}
+.cam-rail #camRefresh{height:27px !important;width:27px !important;border-radius:9px !important}
+.cam-rail #camRefresh{width:32px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.cam-rail #camRefresh span{display:none}
+.rail-h{flex:none;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.rail-h .hist-t{font-size:12.5px;letter-spacing:.05em}
+.rail-h .hist-n{font-size:11px}
+.rail-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+/* Rail giống hàng bảng camera: KHÔNG khung mỗi thẻ, chỉ là dòng (.trow) với
+   border-bottom + hover vạch vàng. Mỗi ô nhét vào chính cell cua .tbl lam nho
+   gap ra de danh sach day dam hon. */
+.cam-rail .rail-list{gap:2px}
+.cam-rail .rail-row{display:flex;align-items:center;gap:9px;padding:9px 2px;width:100%;
+  text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.07);
+  border-radius:0}
+.cam-rail .rail-row:hover{background:rgba(213,194,149,.08)}
+.cam-rail .rail-row::before{left:0}
+.cam-rail .rail-row .c-id{flex:none;min-width:30px;font:600 11.5px/1 var(--m);color:#d5c295}
+.cam-rail .rail-row .c-nm{flex:1;min-width:0;font:600 13px/1.25 var(--b);color:#f5f5f7;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cam-rail .rail-row .c-st{flex:none}
+.cam-rail .rail-row.off .c-nm{color:rgba(148,156,166,.45)}
+.cam-rail .rail-row .rail-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.cam-rail .rail-row .rail-ms{flex:none;display:inline-flex;align-items:center;
+  font:800 10.5px/1 var(--b);letter-spacing:.01em;border-radius:99px;padding:5px 9px;
+  color:#bf5af2;border:1px solid rgba(191,90,242,.5);
+  background:linear-gradient(168deg,rgba(191,90,242,.28),rgba(150,50,220,.12));white-space:nowrap}
+.cam-rail .rail-row .rail-al{flex:none;display:inline-flex;align-items:center;
+  font:800 10.5px/1 var(--b);letter-spacing:.01em;border-radius:99px;padding:5px 9px;
+  color:#ff453a;border:1px solid rgba(255,69,58,.5);
+  background:linear-gradient(168deg,rgba(255,69,58,.28),rgba(200,40,30,.12));white-space:nowrap}
+.cam-rail .rail-row.off .rail-ms,.cam-rail .rail-row.off .rail-al{opacity:.45}
+.cam-rail .rail-row .c-id{flex:none;min-width:30px}
+
+
+/* ---------- THƯ VIỆN · mở rộng (tạo/đổi tên/xóa lib, thêm mục, tìm, paging) ----------
+   Khớp design glass/gold sẵn có. Chỉ thêm class MỚI, không sửa class cũ. */
+
+/* Ô tìm theo tên trong toolbar. */
+.lib-q{flex:none;width:170px;height:36px;background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.14);border-radius:14px;color:#f5f5f7;
+  font:500 12.5px/1 var(--b);padding:0 13px;transition:border-color .16s ease,box-shadow .16s ease}
+.lib-q::placeholder{color:rgba(229,229,234,.42)}
+.lib-q:focus{outline:none;border-color:#d5c295;
+  box-shadow:0 0 0 3px rgba(213,194,149,.18)}
+.lib-q::-webkit-search-cancel-button{-webkit-appearance:none}
+
+/* Badge model_status trên thẻ: viên màu theo trạng thái. */
+.lib-ms{display:inline-flex;align-items:center;gap:5px;margin-left:6px;
+  font:700 8.5px/1 var(--b);letter-spacing:.05em;border-radius:99px;
+  padding:4px 8px;border:1px solid rgba(255,255,255,.22);white-space:nowrap;
+  backdrop-filter:blur(10px) saturate(180%);-webkit-backdrop-filter:blur(10px) saturate(180%)}
+.lib-ms.ok{background:rgba(48,209,88,.16);color:#30d158}
+.lib-ms.warn{background:rgba(255,159,10,.16);color:#ff9f0a}
+.lib-ms.err{background:rgba(255,69,58,.16);color:#ff6961}
+/* Trên ảnh thẻ: badge neo góc trên phải, nổi trên ảnh bất kỳ. */
+.lib-img .lib-ms{position:absolute;top:10px;right:10px;margin:0;z-index:3;
+  background:rgba(10,10,12,.55);border-color:rgba(255,255,255,.28);
+  box-shadow:0 4px 14px rgba(0,0,0,.4)}
+
+/* Icon làm mới xoay khi đang đọc thư viện từ box. */
+#libRefresh.spin svg{animation:libSpin .9s linear infinite}
+#libRefresh.spin{pointer-events:none;opacity:.8}
+@keyframes libSpin{to{transform:rotate(360deg)}}
+
+/* Nút "Làm mới" trên lưới live cũng xoay icon khi bấm — dùng chung keyframe libSpin. */
+#camRefresh.spin svg{animation:libSpin .7s linear infinite}
+#camRefresh.spin{pointer-events:none;opacity:.75}
+
+/* Hai nút icon nhỏ (đổi tên / xóa) trong dropdown thư viện. */
+.mi{flex:none;width:24px;height:24px;border-radius:8px;display:grid;place-items:center;
+  background:transparent;border:1px solid transparent;cursor:pointer;
+  transition:background .14s ease,border-color .14s ease;opacity:.55}
+.mi:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.18);opacity:1}
+.mi.act::after{content:"✎";font:700 11px/1 var(--b);color:#d5c295}
+.mi.del::after{content:"✕";font:700 11px/1 var(--b);color:#ff6961}
+
+/* Ảnh xem trước khi chọn file thêm mục. */
+.lib-prev{display:flex;gap:9px;flex-wrap:wrap;min-height:0}
+.lib-prev img{width:64px;height:64px;object-fit:cover;border-radius:12px;
+  border:1px solid rgba(255,255,255,.16);cursor:pointer;
+  transition:transform .16s ease,border-color .16s ease;
+  background:#101216 center/cover no-repeat}
+.lib-prev img:hover{transform:scale(1.06);border-color:#d5c295}
+
+/* Ảnh lớn trong modal chi tiết mục. */
+.ld-img{aspect-ratio:4/5;border-radius:18px;background:#101216 center/cover no-repeat;
+  border:1px solid rgba(255,255,255,.14);overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 16px 36px rgba(0,0,0,.5)}
+.ld-img .msg{display:grid;place-items:center;height:100%;font:500 12px/1.4 var(--m);
+  color:rgba(229,229,234,.42)}
