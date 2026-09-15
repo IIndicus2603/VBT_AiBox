@@ -597,13 +597,23 @@
       <div class="m-body nosb">
         <div class="m-col">
           <div class="field"><label>URL RTSP</label>
-            <input id="mUrl" class="mono" placeholder="rtsp://admin:pass@192.168.21.178:554/ch01">
-            <span class="hint">Bridge tự escape '%' thành %25 trước khi gửi box (box
-              percent-decode, raw '%' bị từ chối) · riêng go2rtc cũng cần %25.</span></div>
-          <div class="field"><label>Tên camera</label>
+            <input id="mUrl" class="mono" placeholder="rtsp://192.168.21.178:554/ch01">
+            <span class="hint">Nếu điền Username / Password bên dưới, bridge tự ghép vào URL trước khi gửi (và escape '%' → %25 cho box + go2rtc).</span></div>
+          <div style="display:flex;gap:10px">
+            <div class="field" style="flex:1"><label>Username</label>
+              <input id="mUser" placeholder="admin" autocomplete="username">
+            </div>
+            <div class="field" style="flex:1"><label>Password</label>
+              <input id="mPass" type="password" placeholder="(để trống nếu không có)" autocomplete="current-password">
+            </div>
+          </div>
+          <div class="field"><label>Tên channel</label>
             <input id="mName" placeholder="cam01" maxlength="64" required>
             <span class="hint">Thành <code>channel_name</code> trên box: tối đa 64 ký tự,
               không trùng · tên luồng go2rtc box tự đặt là <code>ch&lt;id&gt;</code></span></div>
+          <div class="field"><label>Custom ID <span class="hint" style="display:inline;font-size:11px">(tuỳ chọn)</span></label>
+            <input id="mCustom" placeholder="VD: entrance-cam-01" maxlength="64">
+            <span class="hint">Truyền làm <code>custom_code</code> lên box để định danh riêng</span></div>
           <div class="field"><label>Media</label>
             <div data-seg class="seg" id="mMedia" style="align-self:flex-start">
               <button data-media="" class="on">Video + âm thanh</button>

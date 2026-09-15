@@ -109,21 +109,126 @@ const putStream = (name, src) => fetch(
   API + '?name=' + encodeURIComponent(name) + '&src=' + encodeURIComponent(src),
   {method: 'PUT'});
 
+// Luồng tạm thời (_probe_...) và trình phát video xem thử trên modal thêm camera.
+let probeStreamName = null;
+let probePlayer = null;
+
+/**
+ * Dọn dẹp luồng xem thử tạm thời khỏi go2rtc và gỡ trình phát video khỏi DOM
+ * khi đóng modal, đổi thông số URL/pass hoặc hoàn tất thêm camera.
+ */
+function stopModalPreview() {
+  if (probePlayer) {
+    try { probePlayer.src = ''; probePlayer.remove(); } catch {}
+    probePlayer = null;
+  }
+  if (probeStreamName) {
+    const stream = probeStreamName;
+    probeStreamName = null;
+    fetch(API + '?src=' + encodeURIComponent(stream), {method: 'DELETE'}).catch(() => {});
+  }
+  const msgEl = $('#mPrevMsg');
+  if (msgEl) msgEl.style.display = '';
+}
+
+/**
+ * Vẽ thông tin modal thêm camera: phát video xem thử trực tiếp bằng <video-stream>,
+ * cập nhật thông số codec/độ phân giải khi live hoặc báo lỗi nếu RTSP thất bại.
+ */
 function paintModal() {
   const msg = {idle: 'Chưa kiểm tra · bấm "Kiểm tra kết nối"', testing: 'Đang thử kết nối…',
-               invalid: 'URL phải bắt đầu bằng rtsp://', ok: 'Kết nối được',
+               invalid: 'URL phải bắt đầu bằng rtsp://', ok: 'Đang kết nối luồng…',
                bad: 'Không kết nối được'}[M.test];
-  $('#mPrevMsg').textContent = msg;
+  const msgEl = $('#mPrevMsg');
+  if (msgEl) msgEl.textContent = msg;
   const r = M.rows;
   $('#mRows').innerHTML = !r ? row('—', 'chưa có dữ liệu', 'none')
     : r.err ? row('Lỗi', String(r.err).slice(0, 60), 'err')
     : row('Codec', r.codec || '—') + row('Phân giải', r.res || '—') +
       row('Âm thanh', r.audio ? 'có' : 'không', r.audio ? '' : 'none');
+
+  if (M.test === 'ok' && probeStreamName) {
+    const container = $('#mPrev');
+    if (container) {
+      if (msgEl) {
+        msgEl.style.display = '';
+        msgEl.style.zIndex = '1';
+        msgEl.textContent = 'Đang kết nối & chờ khung hình từ camera…';
+      }
+      container.style.position = 'relative';
+      container.style.overflow = 'hidden';
+      if (!probePlayer || !probePlayer.isConnected) {
+        if (probePlayer) { try { probePlayer.remove(); } catch {} }
+        probePlayer = document.createElement('video-stream');
+        probePlayer.mode = 'webrtc,mse';
+        probePlayer.media = 'video';
+        probePlayer.style.position = 'absolute';
+        probePlayer.style.inset = '0';
+        probePlayer.style.width = '100%';
+        probePlayer.style.height = '100%';
+        probePlayer.style.display = 'block';
+        probePlayer.style.borderRadius = 'inherit';
+        probePlayer.style.zIndex = '2';
+
+        probePlayer.addEventListener('state', e => {
+          const st = e.detail?.state;
+          if (st === 'live') {
+            if (msgEl) msgEl.style.display = 'none';
+            fetch(API).then(res => res.json()).then(j => {
+              const o = j[probeStreamName] || {};
+              const pr = o.producers?.[0];
+              const rx = (pr?.receivers || []).find(x => x.codec?.codec_type === 'video');
+              M.rows = {
+                codec: rx ? nice(rx.codec.codec_name) : null,
+                res: rx?.codec?.width ? rx.codec.width + '×' + rx.codec.height : null,
+                audio: (pr?.medias || []).some(m => m.startsWith('audio'))
+              };
+              const r = M.rows;
+              $('#mRows').innerHTML = row('Codec', r.codec || '—') + row('Phân giải', r.res || '—') +
+                row('Âm thanh', r.audio ? 'có' : 'không', r.audio ? '' : 'none');
+            }).catch(() => {});
+          } else if (st === 'error') {
+            M.test = 'bad';
+            M.rows = {err: e.detail?.error || 'Không thể mở luồng RTSP'};
+            stopModalPreview();
+            paintModal();
+          }
+        });
+
+        container.appendChild(probePlayer);
+      }
+      probePlayer.src = new URL(G + 'api/ws?src=' + encodeURIComponent(probeStreamName), location.href);
+    }
+  } else if (M.test !== 'ok') {
+    stopModalPreview();
+  }
+}
+
+/**
+ * Ghep username/password tu #mUser/#mPass vao URL RTSP neu URL chua co '@'.
+ * Neu URL da co credential thi giu nguyen, khong ghi de.
+ */
+function buildRtspUrl() {
+  const base = $('#mUrl').value.trim();
+  const user = $('#mUser').value.trim();
+  const pass = $('#mPass').value;  // giu nguyen, _add_channel se escape %
+  if (!user || base.includes('@')) return base;
+  try {
+    const u = new URL(base);
+    u.username = user;
+    u.password = pass;
+    return u.toString();
+  } catch {
+    // URL chua hop le (dang nhap do), tra nguyen ban
+    return base;
+  }
 }
 
 function openModal() {
+  stopModalPreview();
   M.test = 'idle'; M.rows = null;
   $('#mUrl').value = ''; $('#mName').value = '';
+  $('#mUser').value = ''; $('#mPass').value = ''; $('#mCustom').value = '';
   paintModal();
   $('#modal').hidden = false;
   $('#mUrl').focus();
@@ -131,8 +236,10 @@ function openModal() {
 
 /** Mo modal them camera voi URL/ten da dien san (tu Auto Search). */
 function prefillModal(url, name) {
+  stopModalPreview();
   M.test = 'idle'; M.rows = null;
   $('#mUrl').value = url; $('#mName').value = name;
+  $('#mUser').value = ''; $('#mPass').value = ''; $('#mCustom').value = '';
   paintModal();
   $('#modal').hidden = false;
   $('#mUrl').focus();
@@ -144,21 +251,43 @@ function prefillModal(url, name) {
 // V1 (khong co trong PDF) — bridge proxy qua /api/discover + /api/discover/list.
 async function scanNetwork() {
   const box = $('#discoverBox'), btn = $('#discoverBtn');
+  if (!box.hidden && box.dataset.scanning !== 'true') {
+    box.hidden = true;
+    return;
+  }
   box.hidden = false;
-  box.innerHTML = '<div class="al-load">Đang quét mạng…</div>';
+  box.dataset.scanning = 'true';
   btn.disabled = true;
+
+  const renderHead = (contentHtml) => {
+    box.innerHTML = '<div class="d-head" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:8px">' +
+      '<span style="font:600 13px/1.4 var(--b);color:var(--fg1)">Camera quét được trong mạng LAN</span>' +
+      '<button id="discoverClose" style="background:none;border:none;color:var(--ghost);cursor:pointer;font-size:15px;padding:2px 6px;line-height:1">✕</button>' +
+      '</div>' + contentHtml;
+    const closeBtn = box.querySelector('#discoverClose');
+    if (closeBtn) {
+      closeBtn.onmouseenter = () => closeBtn.style.color = 'var(--fg1)';
+      closeBtn.onmouseleave = () => closeBtn.style.color = 'var(--ghost)';
+      closeBtn.onclick = (e) => { e.stopPropagation(); box.hidden = true; };
+    }
+  };
+
+  renderHead('<div class="al-load">Đang quét mạng…</div>');
+
   try {
     const s = await cnPost('api/discover', {});
     if (s.code !== 0) throw new Error(s.msg || 'code ' + s.code);
-    // Vendor UI doc ket qua ngay sau PUT; box chi tra sau khi scan da xong.
     const j = await cnPost('api/discover/list', {});
     if (j.code !== 0) throw new Error(j.msg || 'code ' + j.code);
     const devs = j.data || [];
     if (!devs.length) {
-      box.innerHTML = '<div class="al-load">Không tìm thấy camera nào trên mạng</div>';
+      renderHead('<div class="al-load">Không tìm thấy camera nào trên mạng</div>');
       return;
     }
-    box.replaceChildren(...devs.map(d => {
+    
+    renderHead('<div id="discoverList"></div>');
+    const listEl = box.querySelector('#discoverList');
+    listEl.replaceChildren(...devs.map(d => {
       const el = document.createElement('div');
       el.className = 'd-row';
       el.innerHTML = '<div class="d-main"><div class="d-l1"><span class="d-ip"></span>' +
@@ -169,38 +298,30 @@ async function scanNetwork() {
       el.querySelector('.d-l2').textContent =
         (d.manufacturer || '—') + ' · ' + (d.addr || d.ip) + ' · chưa thêm vào box';
       el.querySelector('.d-add').onclick = () => {
-        // Camera tim thay chua co mat khau -> mo modal de nguoi dung dien RTSP day du.
+        box.hidden = true;
         prefillModal('rtsp://' + d.ip + ':554/', d.ip);
       };
       return el;
     }));
   } catch (e) {
-    box.innerHTML = '<div class="al-load" style="color:var(--err2)">' +
-      'Không quét được: ' + e.message + '</div>';
+    renderHead('<div class="al-load" style="color:var(--err2)">Không quét được: ' + e.message + '</div>');
   } finally {
+    delete box.dataset.scanning;
     btn.disabled = false;
   }
 }
 
-// Thu bang chinh go2rtc: PUT ten tam roi doc /api/streams, xong thi DELETE.
+// Thu bang chinh go2rtc: PUT ten tam va de player <video-stream> mo luong & bao loi truc tiep.
 async function testUrl(src) {
+  stopModalPreview();
   const tmp = '_probe_' + Date.now();
   try {
     const p = await putStream(tmp, src);
     if (!p.ok) return {err: (await p.text()) || 'PUT ' + p.status};
-    await new Promise(r => setTimeout(r, 1800));
-    const j = await fetch(API).then(r => r.json());
-    const o = j[tmp] || {};
-    const pr = o.producers?.[0];
-    if (!pr) return {err: 'go2rtc không mở được luồng'};
-    const rx = (pr.receivers || []).find(x => x.codec?.codec_type === 'video');
-    return {codec: rx ? nice(rx.codec.codec_name) : null,
-            res: rx?.codec?.width ? rx.codec.width + '×' + rx.codec.height : null,
-            audio: (pr.medias || []).some(m => m.startsWith('audio'))};
+    probeStreamName = tmp;
+    return {ok: true};
   } catch (e) {
     return {err: e.message};
-  } finally {
-    fetch(API + '?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
   }
 }
 
@@ -273,6 +394,13 @@ $('#camRefresh').onclick = async () => {
 
 $$('nav button').forEach(b => b.onclick = () => go(b.dataset.go));
 $('#back').onclick = () => { stopVideo(); go('live'); };
+
+document.addEventListener('click', e => {
+  const box = $('#discoverBox'), btn = $('#discoverBtn');
+  if (box && !box.hidden && !box.contains(e.target) && !btn.contains(e.target)) {
+    box.hidden = true;
+  }
+});
 
 /* ============ bảng thông báo trên dock "Nhật ký" ============ */
 // Bấm dock "Nhật ký" -> mở bảng thông báo (không thẳng tới view log). "Xem chi
@@ -431,17 +559,20 @@ $('#pgNext').onclick = () => { S.page++; drawGrid(); };
 
 $('#addBtn').onclick = openModal;
 $('#discoverBtn').onclick = scanNetwork;
-$('#mClose').onclick = $('#mCancel').onclick = () => $('#modal').hidden = true;
-$('#modal').onclick = e => { if (e.target === $('#modal')) $('#modal').hidden = true; };
+const closeModal = () => { stopModalPreview(); $('#modal').hidden = true; };
+$('#mClose').onclick = $('#mCancel').onclick = closeModal;
+$('#modal').onclick = e => { if (e.target === $('#modal')) closeModal(); };
 $$('#mMedia button').forEach(b => b.onclick = () => {
   M.media = b.dataset.media;
   $$('#mMedia button').forEach(x => x.classList.toggle('on', x === b));
+  stopModalPreview();
 });
-$('#mUrl').oninput = () => { M.test = 'idle'; M.rows = null; paintModal(); };
+$('#mUrl').oninput = $('#mUser').oninput = $('#mPass').oninput = () => { stopModalPreview(); M.test = 'idle'; M.rows = null; paintModal(); };
 
 // '#video' la query cua go2rtc: bo track audio ngay o nguon
+// buildRtspUrl() da ghep user/pass vao URL neu can.
 const srcOf = () => {
-  const u = fixPct($('#mUrl').value.trim());
+  const u = fixPct(buildRtspUrl());
   return M.media === 'video' && !u.includes('#') ? u + '#video' : u;
 };
 
@@ -461,11 +592,12 @@ $('#mAdd').onclick = async () => {
   // thanh '%25' truoc khi gui (raw '%@' bi box tu choi 60062 Invalid Arguments).
   // Bridge _add_channel() tu escape. fixPct()/srcOf() chi dung cho go2rtc (no cung
   // can %25), khong gui len box.
-  const url = $('#mUrl').value.trim(), name = $('#mName').value.trim();
+  const url = buildRtspUrl(), name = $('#mName').value.trim();
+  const customCode = $('#mCustom').value.trim();
   if (!validRtsp(url)) { M.test = 'invalid'; return paintModal(); }
   // Vendor web (AddChannel.3c964a69.js): nameRules = required + <=64 + not-blank.
-  if (!name || !name.trim()) return alert('Tên camera: bắt buộc, không được chỉ toàn khoảng trắng');
-  if (name.length > 64) return alert('Tên camera: tối đa 64 ký tự');
+  if (!name || !name.trim()) return alert('Tên channel: bắt buộc, không được chỉ toàn khoảng trắng');
+  if (name.length > 64) return alert('Tên channel: tối đa 64 ký tự');
   // Vendor web: rtsp <=1023 bytes. NHUNG rtsp co credential dai -> validate chu, khong byte.
   if (url.length > 256) return alert('URL RTSP tối đa 256 ký tự (cẩn thận với credential dài)');
   const hint = $('#mHint').textContent;
@@ -473,8 +605,9 @@ $('#mAdd').onclick = async () => {
   $('#mAdd').disabled = true;          // click doi = tao 2 channel trung tren box
   let j;
   try {
-    j = await cnPost('api/channel/add',
-                     {channel_name: name, rtsp: url, transport_type: 1});
+    const body = {channel_name: name, rtsp: url, transport_type: 1};
+    if (customCode) body.custom_code = customCode;
+    j = await cnPost('api/channel/add', body);
   } catch (e) {
     j = {code: -1, msg: e.message};
   } finally {
@@ -490,15 +623,18 @@ $('#mAdd').onclick = async () => {
   // PHAI tu tao luong go2rtc, khong duoc doi sync_streams(): no bo qua channel moi
   // khi /channel/list chua tra `rtsp` (bang chung t_add.json: them channel_id 10
   // thanh cong nhung sync chi added:['ch9'] -> ch10 bien mat, grid trong khong).
-  // srcOf() = fixPct(url) va them '#video' neu chon "Chi video" — '#video' la cua
-  // go2rtc, box khong hieu, nen chi gan o day chu khong gui len box.
+  // srcOf() = fixPct(buildRtspUrl()) va them '#video' neu chon "Chi video" — '#video'
+  // la cua go2rtc, box khong hieu, nen chi gan o day chu khong gui len box.
   if (stream) await putStream(stream, srcOf());
+  stopModalPreview();
   $('#modal').hidden = true;
   await refresh();
-  // Nút "Thêm camera" nằm ở tab Camera: refresh() chỉ vẽ lại lưới live, phải nạp
-  // lại bảng /api/cameras thì luồng vừa thêm mới hiện ra trước mặt người dùng.
+  for (const [name, t] of S.tiles) {
+    if (t.player && t.box.isConnected)
+      t.player.src = new URL(G + 'api/ws?src=' + encodeURIComponent(name), location.href);
+  }
   if (S.view === 'cam') loadCams();
-  toast({kind: 'ok', sev: 'ĐÃ THÊM', title: 'Box đã nhận camera ' + name,
+  toast({kind: 'ok', sev: 'ĐÃ THÊM', title: 'Box đã nhận channel ' + name,
          sub: stream ? 'luồng ' + stream : '', name: stream && S.api[stream] ? stream : null});
 };
 
