@@ -64,8 +64,32 @@ button,input,select{font-family:inherit}
 [data-rim]:hover [data-edge="right"]{animation:omEdgeRight 3.6s linear .9s infinite}
 [data-rim]:hover [data-edge="bottom"]{animation:omEdgeBottom 3.6s linear 1.8s infinite}
 [data-rim]:hover [data-edge="left"]{animation:omEdgeLeft 3.6s linear 2.7s infinite}
-[data-rim]:hover{border-color:var(--gold3)!important;
-  box-shadow:0 0 0 1px rgba(196,138,41,.35),0 10px 26px rgba(0,0,0,.45)}
+@keyframes omBellSwing {
+  0% { transform: rotate(0deg); }
+  8% { transform: rotate(20deg); }
+  16% { transform: rotate(-20deg); }
+  24% { transform: rotate(15deg); }
+  32% { transform: rotate(-15deg); }
+  40% { transform: rotate(8deg); }
+  48% { transform: rotate(-8deg); }
+  56%, 100% { transform: rotate(0deg); }
+}
+
+#notifBellBtn {
+  overflow: visible !important;
+}
+
+#notifBellBtn.has-unread svg {
+  transform-origin: 50% 10%;
+  animation: omBellSwing 1.6s cubic-bezier(.36, .07, .19, .97) infinite;
+  stroke: var(--gold) !important;
+  filter: drop-shadow(0 0 5px rgba(217, 162, 51, 0.85));
+}
+
+#notifBellBtn.has-unread {
+  border-color: rgba(213, 194, 149, 0.6) !important;
+  box-shadow: 0 0 12px rgba(213, 194, 149, 0.35) !important;
+}
 
 /* sheen: vet sang chay qua nut vang khi hover */
 [data-sheen]{position:relative;overflow:hidden}
@@ -208,8 +232,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
   padding:14px 12px 14px 18px;gap:10px}
 .stage{position:relative;flex:1;min-height:0;background:#0a0d12;border:1px solid var(--bd);
   border-radius:9px;overflow:hidden}
-.stage video-stream,.stage video{position:absolute;inset:0;width:100%;height:100%;
-  object-fit:contain;border-radius:9px}
+.stage video-stream,.stage video,.stage video-stream video{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;border-radius:20px}
 /* z-index 4: PHAI cao hon .vod-v (2) va .vod-msg (3), neu khong clip xem lai se
    che mat nut LIVE -> khong con duong quay ve luong truc tiep. */
 .s-top{position:absolute;z-index:4;top:11px;left:13px;right:13px;display:flex;
@@ -450,8 +474,8 @@ aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direct
 @media (max-width:760px){.m-body{grid-template-columns:1fr}}
 
 /* ---------- xem lai clip: chieu tren chinh khung stage ---------- */
-.vod-v{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
-  background:#000;z-index:2}
+.vod-v{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  border-radius:20px;background:#000;z-index:2}
 .vod-msg{position:absolute;inset:0;z-index:3;display:grid;place-items:center;
   pointer-events:none;font:400 11.5px/1.5 var(--m);color:var(--dim);text-align:center;
   padding:0 30px;background:rgba(4,6,10,.55)}
@@ -515,7 +539,7 @@ aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direct
 /* #aiShot la khung chua <video-stream> (stream song), khong con <img> */
 .ai-shot #aiShot{position:absolute;inset:0}
 .ai-shot video-stream,.ai-shot video-stream video{width:100%;height:100%;display:block}
-.ai-shot video-stream video{object-fit:contain;background:#0a0d12}
+.ai-shot video-stream video{object-fit:cover;background:#0a0d12}
 /* Con tro do JS dat theo mode (mac dinh 'default', 'crosshair' khi dang ve).
    De crosshair o day thi luc KHONG ve chuot van la dau cong. */
 .ai-shot canvas{position:absolute;inset:0;width:100%;height:100%;cursor:default}
@@ -822,55 +846,64 @@ a{color:#e6dbba}a:hover{color:#f4ecca}
 .tl-day .ln{flex:1;height:1px;background:rgba(255,255,255,.08)}
 .tl{display:flex;flex-direction:column;padding:0 16px 6px;flex:1;min-height:0;overflow:auto;scrollbar-width:none}
 .tl::-webkit-scrollbar{display:none;width:0;height:0}
-.tl-row{--tl-anchor:30px;position:relative;z-index:1;display:grid;grid-template-columns:78px 24px minmax(0,1fr);align-items:stretch;cursor:pointer;border-radius:6px;transition:background .16s ease,box-shadow .16s ease;margin:0 -16px;padding:0 16px}
+.tl-row{--tl-anchor:30px;position:relative;z-index:1;display:grid;grid-template-columns:78px 24px minmax(0,1fr);align-items:stretch;cursor:pointer;border-radius:8px;transition:background .16s ease,box-shadow .16s ease;margin:0 -16px;padding:0 16px}
 .tl-row:hover,.tl-row.hl{position:relative;z-index:10;background:rgba(213,194,149,.10);box-shadow:0 4px 18px rgba(0,0,0,.45)}
 .tl-row::before{content:"";position:absolute;top:2px;left:0;bottom:2px;width:3px;border-radius:2px;background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);box-shadow:0 0 12px rgba(213,194,149,.65),0 0 2px rgba(213,194,149,.8);opacity:0;transform:scaleY(.35);transform-origin:center;transition:opacity .22s ease,transform .26s cubic-bezier(.2,.85,.25,1);z-index:11}
 .tl-row:hover::before,.tl-row.hl::before{left:0;opacity:1;transform:scaleY(1)}
 .tl-t{display:flex;align-items:baseline;justify-content:flex-end;gap:1px;padding:calc(var(--tl-anchor) - 8px) 0 15px 4px}
-.tl-hm{font:500 14px/1 'JetBrains Mono',monospace;color:#d1d1d6}
-.tl-sec{font:400 11px/1 'JetBrains Mono',monospace;color:rgba(229,229,234,.4)}
+.tl-hm{font:600 15px/1 'JetBrains Mono',monospace;color:#f5f5f7}
+.tl-sec{font:400 11.5px/1 'JetBrains Mono',monospace;color:rgba(229,229,234,.45)}
 .tl-mid{position:relative;display:flex;justify-content:center}
 .tl-mid .ln{width:1px;background:rgba(255,255,255,.1)}
-.tl-dot{position:absolute;top:calc(var(--tl-anchor) - 5px);width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 3px rgba(11,12,15,.6),0 0 10px currentColor}
-.tl-b{display:flex;align-items:center;gap:16px;padding:12px 0 12px 16px;border-bottom:1px solid rgba(255,255,255,.06);min-width:0}
-.tl-th{position:relative;flex:none;width:150px;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#101216}
-.tl-th .sc{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.04) 0 1px,transparent 1px 3px)}
-.tl-th .box{position:absolute;left:38%;top:22%;width:22%;height:56%;border:1.5px solid;border-radius:2px}
-.tl-th .cam{position:absolute;bottom:6px;left:7px;font:500 10px/1 'JetBrains Mono',monospace;color:#fff;text-shadow:0 1px 2px #000}
-.tl-mn{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.tl-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.tl-kind{display:inline-flex;align-items:center;gap:6px;font:700 10px/1 'Inter',sans-serif;letter-spacing:.06em;background:rgba(255,255,255,.06);border:1px solid;border-radius:99px;padding:6px 10px;white-space:nowrap}
-.tl-kind i{width:5px;height:5px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
-.tl-new{flex:none;display:inline-flex;align-items:center;
-  font:800 9px/1 var(--b);letter-spacing:.05em;padding:5px 8px;border-radius:99px;
-  color:#ff453a;background:linear-gradient(168deg,rgba(255,88,78,.30) 0%,rgba(255,88,78,.12) 55%,rgba(214,44,34,.20) 100%);
-  border:1px solid rgba(255,255,255,.32);text-shadow:0 1px 2px rgba(0,0,0,.6);
-  backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
-  -webkit-backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 8px 20px rgba(0,0,0,.4)}
-/* Badge nhận diện người — chip cùng kiểu .tl-kind, ngay bên phải nó. */
-.tl-per-badge{display:inline-flex;align-items:center;gap:5px;font:700 10px/1 'Inter',sans-serif;letter-spacing:.04em;color:#bf5af2;background:rgba(191,90,242,.16);border:1px solid rgba(191,90,242,.45);border-radius:99px;padding:6px 10px;white-space:nowrap}
-.tl-ttl{font:600 16px/1.25 'Inter',sans-serif;color:#f5f5f7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tl-sub{font:400 11px/1.3 'JetBrains Mono',monospace;color:rgba(229,229,234,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tl-r{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px;padding-right:2px}
-.tl-conf{font:600 12px/1 'JetBrains Mono',monospace}
-.tl-bar{width:64px;height:3px;border-radius:2px;background:rgba(255,255,255,.1);overflow:hidden}
-.tl-bar i{display:block;height:100%}
-.tl-more{font:500 12.5px/1 'Inter',sans-serif;color:#d5c295;white-space:nowrap}
-/* Người được nhận diện: ảnh to bằng ảnh camera (.tl-th), bên phải tên hành vi.
-   Không khung viền — ảnh full khung, tên + độ chính xác phủ lên như .cam. */
-.tl-per{flex:none;display:flex;align-items:center;gap:10px;align-self:center;margin-right:640px}
-.tl-per img{width:150px;aspect-ratio:16/9;border-radius:8px;object-fit:cover;display:block;background:#101216}
+.tl-dot{position:absolute;top:calc(var(--tl-anchor) - 5px);width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 3px rgba(11,12,15,.7),0 0 12px currentColor}
+.tl-dot.dot-danger{background:#ff4d4f;color:#ff4d4f;box-shadow:0 0 0 3px rgba(11,12,15,.7),0 0 14px rgba(255,77,79,.9)}
+.tl-dot.dot-warning{background:#ffb800;color:#ffb800;box-shadow:0 0 0 3px rgba(11,12,15,.7),0 0 14px rgba(255,184,0,.9)}
+.tl-b{display:flex;align-items:center;gap:16px;padding:14px 0 14px 16px;border-bottom:1px solid rgba(255,255,255,.06);min-width:0}
+.tl-th{position:relative;flex:none;width:160px;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#101216;border:1px solid rgba(255,255,255,.1)}
+.tl-th img{width:100%;height:100%;object-fit:cover;display:block}
+.tl-th .sc{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,transparent 0%,rgba(61,220,151,0.22) 50%,transparent 100%);animation:tlScan 2.5s ease-in-out infinite}
+@keyframes tlScan{0%{transform:translateY(-100%)}100%{transform:translateY(100%)}}
+.tl-th .box{position:absolute;left:35%;top:20%;width:30%;height:58%;border:1.8px solid #ff4d4f;border-radius:3px;box-shadow:0 0 8px rgba(255,77,79,0.5)}
+.tl-th .cam{position:absolute;bottom:6px;left:7px;font:600 10.5px/1 'JetBrains Mono',monospace;color:#fff;background:rgba(0,0,0,0.65);padding:2px 6px;border-radius:4px;backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.15)}
+.tl-mn{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.tl-chips{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.tl-rule-badge{display:inline-flex;align-items:center;gap:5px;font:700 10px/1 'Inter',sans-serif;letter-spacing:.05em;background:rgba(255,77,79,.14);color:#ff6b6b;border:1px solid rgba(255,77,79,.38);border-radius:99px;padding:5px 10px;white-space:nowrap}
+.tl-type-badge{font:600 10px/1 'JetBrains Mono',monospace;color:rgba(255,255,255,.75);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:99px;padding:4px 9px;white-space:nowrap}
+.tl-new{flex:none;display:inline-flex;align-items:center;font:800 9px/1 var(--b);letter-spacing:.05em;padding:4px 8px;border-radius:99px;color:#ff453a;background:linear-gradient(168deg,rgba(255,88,78,.30) 0%,rgba(255,88,78,.12) 55%,rgba(214,44,34,.20) 100%);border:1px solid rgba(255,255,255,.32);box-shadow:0 4px 12px rgba(255,77,79,.3)}
+.tl-per-badge{display:inline-flex;align-items:center;gap:5px;font:700 10px/1 'Inter',sans-serif;letter-spacing:.04em;color:#bf5af2;background:rgba(191,90,242,.16);border:1px solid rgba(191,90,242,.45);border-radius:99px;padding:5px 10px;white-space:nowrap}
+.tl-ttl{font:700 16.5px/1.25 'Inter',sans-serif;color:#ffffff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-0.01em}
+.tl-sub{font:500 11.5px/1.3 'JetBrains Mono',monospace;color:rgba(229,229,234,.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-det-box{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
+.tl-det-item{font:500 11px/1 'Inter',sans-serif;color:#c5d2e0;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:4px 8px;display:inline-flex;align-items:center;gap:4px}
+.tl-acts{flex:none;display:flex;flex-direction:column;gap:6px;padding-right:2px;justify-content:center}
+.tl-acts-row{display:flex;align-items:center;gap:6px;width:100%}
+.tl-acts-row .tl-act-btn{flex:1;justify-content:center}
+.tl-act-btn{font:600 11px/1 'Inter',sans-serif;border-radius:7px;padding:7px 11px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#e5e5ea;cursor:pointer;transition:all .16s ease;display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap}
+.tl-act-btn:hover{background:rgba(213,194,149,.18);border-color:rgba(213,194,149,.45);color:#ffffff;transform:translateY(-1px)}
+.tl-act-btn.btn-cam{width:100%;justify-content:center;background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);border:1px solid #96814f;box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.22),0 1px 4px rgba(0,0,0,.28);color:#2a2410;font-weight:700}
+.tl-act-btn.btn-cam:hover{filter:brightness(1.12);box-shadow:0 0 0 1px rgba(213,194,149,.55),0 0 18px rgba(213,194,149,.4),inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 3px rgba(90,70,30,.22),0 2px 6px rgba(0,0,0,.28);color:#1a1405;transform:translateY(-1px)}
+.tl-per{flex:none;display:flex;align-items:center;gap:10px;align-self:center;margin-right:140px}
+.tl-per.has-per{cursor:pointer;transition:transform .16s ease, filter .16s ease}
+.tl-per.has-per:hover{transform:translateY(-1px);filter:brightness(1.15)}
+.tl-per img{width:120px;aspect-ratio:16/9;border-radius:6px;object-fit:cover;display:block;background:#101216;border:1px solid rgba(191,90,242,.4)}
+.tl-per-ph{width:120px;aspect-ratio:16/9;border-radius:6px;background:rgba(255,255,255,.05);border:1px dashed rgba(255,255,255,.22);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:rgba(255,255,255,.75);font:500 10px/1 'Inter',sans-serif}
+.tl-per-ph .ph-ic{display:flex;align-items:center;justify-content:center;color:#ffffff;opacity:.9}
 .tl-per-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
-.tl-per-nm{font:600 13px/1.2 'Inter',sans-serif;color:#f5f5f7;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;max-width:140px}
-.tl-per-sc{font:600 11px/1 'JetBrains Mono',monospace;color:#d5c295;white-space:nowrap}
+.tl-per-nm{font:600 12.5px/1.2 'Inter',sans-serif;color:#f5f5f7;white-space:nowrap}
+.tl-per-sc{font:600 10.5px/1 'JetBrains Mono',monospace;color:#bf5af2;white-space:nowrap}
+.tl-per-btn{margin-top:2px;font:600 10px/1 'Inter',sans-serif;border-radius:5px;padding:4px 8px;border:1px solid rgba(191,90,242,.4);background:rgba(191,90,242,.14);color:#e4aaff;cursor:pointer;transition:all .16s ease;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;width:fit-content}
+.tl-per-btn:hover{background:rgba(191,90,242,.3);border-color:rgba(191,90,242,.7);color:#ffffff;transform:translateY(-1px)}
 [data-camrow]{position:relative;transition:background .16s ease,transform .16s ease}
 [data-camrow]::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);box-shadow:0 0 12px rgba(213,194,149,.65), 0 0 2px rgba(213,194,149,.8);opacity:0;transform:scaleY(.35);transform-origin:center;transition:opacity .22s ease,transform .26s cubic-bezier(.2,.85,.25,1)}
 [data-camrow]:hover{background:rgba(213,194,149,.08)}
 [data-camrow]:hover::before{opacity:1;transform:scaleY(1)}
 /* "Độ trễ" header centred to match its centred cell value */
 [data-camhead] > span:nth-child(5){text-align:center}
+
+@keyframes pulseRed {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 77, 79, 0.6), 0 0 8px rgba(255, 77, 79, 0.4); }
+  50% { box-shadow: 0 0 10px rgba(255, 77, 79, 0.95), 0 0 16px rgba(255, 77, 79, 0.7); }
+}
 
 /* ---------- Floating glass panel (shared by list views) ---------- */
 .lg-panel{position:relative;border-radius:20px;overflow:hidden;
@@ -1447,6 +1480,8 @@ a{color:#e6dbba}a:hover{color:#f4ecca}
 .notif-t{font:600 13px/1.3 var(--b);color:#f5f5f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .notif-s{font:400 10.5px/1.3 var(--m);color:rgba(229,229,234,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .notif-empty{padding:20px 14px;text-align:center;font:400 12px/1.4 var(--m);color:rgba(229,229,234,.45)}
+#notifList, #notifPanel{scrollbar-width:none!important;-ms-overflow-style:none!important}
+#notifList::-webkit-scrollbar, #notifPanel::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
 /* Highlight thẻ vừa chọn trong nhật ký: vàng dock + nháy viền */
 .tl-row.hl{background:rgba(213,194,149,.16)}
 .tl-row.hl::before{left:0;opacity:1;transform:scaleY(1)}

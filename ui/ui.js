@@ -45,8 +45,7 @@ function toast({sev, title, sub, name, kind, img, onSkip, color, ev}) {
     '<div class="t-body"><div class="t-row1"><div class="t-tt">' +
         '<div class="t-ttl"></div><div class="t-sub"></div></div>' +
       '<span class="t-time"></span></div>' +
-      '<div class="t-acts"><button class="go" data-goldbtn>Xem camera</button>' +
-      '<button class="skip">Bỏ qua</button></div></div>';
+      '<div class="t-acts"><button class="go" data-goldbtn>Xem camera</button></div></div>';
   const badge = box.querySelector('.t-badge');
   badge.style.background = 'linear-gradient(168deg,color-mix(in srgb, ' + col +
     ' 30%, transparent),color-mix(in srgb, ' + col + ' 16%, transparent))';
@@ -62,8 +61,6 @@ function toast({sev, title, sub, name, kind, img, onSkip, color, ev}) {
   box.querySelector('.t-sub').textContent = sub || '';
 
   const kill = () => box.remove();
-  // "Bỏ qua" = tat canh bao (het nhay vien), khong chi dong popup.
-  box.querySelector('.skip').onclick = () => { onSkip?.(); kill(); };
   const goBtn = box.querySelector('.go');
   const clip = ev && videoOf(ev) ? ev : null;
   if (clip) {
@@ -394,7 +391,10 @@ $('#camRefresh').onclick = async () => {
 
 /* ================= wiring chung ================= */
 
-$$('nav button').forEach(b => b.onclick = () => go(b.dataset.go));
+$$('nav button').forEach(b => b.onclick = () => {
+  if (b.dataset.go === 'log') markAllSeen();
+  go(b.dataset.go);
+});
 $('#back').onclick = () => { stopVideo(); go('live'); };
 
 document.addEventListener('click', e => {
@@ -404,34 +404,65 @@ document.addEventListener('click', e => {
   }
 });
 
-/* ============ bảng thông báo trên dock "Nhật ký" ============ */
-// Bấm dock "Nhật ký" -> mở bảng thông báo (không thẳng tới view log). "Xem chi
-// tiết" / bấm thẻ mới go('log'). Dùng `unread` (khai báo sau ở scope module) —
-// chỉ chạy lúc click, sau khi module đã eval xong nên không vướng TDZ.
-const notifBtn = $('button[data-go="log"]');
+/* ============ bảng thông báo trên icon chuông toolbar ============ */
+const notifBellBtn = $('#notifBellBtn');
 const notifPanel = $('#notifPanel');
 const notifList = $('#notifList');
-// Các thẻ người dùng đã "Đã xem" — thẻ chưa trong SEEN hiện chấm "chưa đọc".
+// Các thẻ người dùng đã "Đã xem" — lưu vào localStorage để không bị mất khi F5 / tải lại trang.
 const SEEN = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem('vbt_seen_notifs') || '[]');
+  if (Array.isArray(saved)) saved.forEach(k => SEEN.add(k));
+} catch { /* private mode */ }
 
-notifBtn.onclick = e => {
-  e.stopPropagation();
-  if (!notifPanel.hidden) { notifPanel.hidden = true; return; }
-  renderNotif();
-  // Neo dưới toàn bộ dock chuyển tab (nav[data-dock]), thẳng cạnh phải dock.
-  const dock = $('nav[data-dock]').getBoundingClientRect();
-  notifPanel.style.top = (dock.bottom + 8) + 'px';
-  notifPanel.style.right = (window.innerWidth - dock.right) + 'px';
-  notifPanel.hidden = false;
-};
+function saveSeen() {
+  try {
+    const list = Array.from(SEEN).slice(-500);
+    localStorage.setItem('vbt_seen_notifs', JSON.stringify(list));
+  } catch { /* private mode */ }
+}
+
+if (notifBellBtn) {
+  notifBellBtn.onclick = e => {
+    e.stopPropagation();
+    if (!notifPanel.hidden) { notifPanel.hidden = true; return; }
+    renderNotif();
+    const rect = notifBellBtn.getBoundingClientRect();
+    notifPanel.style.top = (rect.bottom + 8) + 'px';
+    notifPanel.style.right = '18px';
+    notifPanel.style.bottom = 'auto';
+    notifPanel.style.maxHeight = `calc(100vh - ${rect.bottom + 26}px)`;
+    notifPanel.hidden = false;
+  };
+}
+if (notifPanel) {
+  notifPanel.onclick = e => e.stopPropagation();
+}
+
+function updateUnreadBadge() {
+  const unreadList = alarms().filter(a => isDetect(a) && !SEEN.has(notifKey(a)));
+  unread = unreadList.length;
+  const txt = unread > 99 ? '99+' : String(unread);
+  const show = unread > 0;
+
+  const bellB = $('#navUnread');
+  const dockB = $('#dockUnread');
+  const bellBtn = $('#notifBellBtn');
+
+  if (bellB) { bellB.hidden = !show; bellB.textContent = txt; }
+  if (dockB) { dockB.hidden = !show; dockB.textContent = txt; }
+  if (bellBtn) { bellBtn.classList.toggle('has-unread', show); }
+
+  paintRail();
+}
 
 // "Đã xem": đánh dấu mọi thẻ hiện tại là đã đọc + xoá badge chưa đọc.
 // Dùng chung cho nút trong panel thông báo và nút trên toolbar nhật ký.
 function markAllSeen() {
   alarms().filter(isDetect).forEach(a => SEEN.add(notifKey(a)));
+  saveSeen();
   FRESH.clear();                 // xoá luôn chip "MỚI" trên các dòng nhật ký
-  unread = 0;
-  $('#navUnread').hidden = true;
+  updateUnreadBadge();
   if (S.view === 'log') loadLog();   // đang ở nhật ký -> vẽ lại để bỏ chip "MỚI"
   renderNotif();
 }
@@ -441,6 +472,7 @@ $('#logReadAll').onclick = () => markAllSeen();
 $('#notifDetail').onclick = e => {
   e.stopPropagation();
   notifPanel.hidden = true;
+  markAllSeen();
   go('log');
 };
 
@@ -448,7 +480,7 @@ $('#notifDetail').onclick = e => {
 const notifKey = a => a.event_id != null ? String(a.event_id) : 'ts' + (a.ts || '0');
 
 function renderNotif() {
-  const rows = alarms().filter(isDetect).slice(0, 12);
+  const rows = alarms().filter(isDetect).slice(0, 9);
   if (!rows.length) {
     const h = document.createElement('div');
     h.className = 'notif-empty';
@@ -475,13 +507,18 @@ function renderNotif() {
     const d = new Date((a.ts || 0) * 1000);
     const s = document.createElement('div');
     s.className = 'notif-s';
-    s.textContent = [a.channel_name || camOf(a), a.ipc_addr,
+    const cName = a.channel_name || camOf(a);
+    s.textContent = [cName ? ('Khu vực: ' + cName) : '', a.ipc_addr,
       pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())]
       .filter(Boolean).join(' · ') || '—';
     b.append(t, s);
     // "MỚI" nằm SÁT PHẢI (sau dot + nội dung), sáng nhờ CSS .notif-unread.
     card.append(dot, b, unreadDot);
     card.onclick = () => {
+      SEEN.add(key);
+      saveSeen();
+      updateUnreadBadge();
+      renderNotif();
       notifPanel.hidden = true;
       go('log');
       highlightLog(key);
@@ -811,7 +848,10 @@ $('#eSave').onclick = async () => {
 
 /* ================= nhat ky ================= */
 
-export const loadLog = () => paintAlarms();
+export async function loadLog() {
+  await loadAlarmHistory().catch(() => {});
+  paintAlarms();
+}
 
 // Mau cham moc theo nhom thuat toan. Key phai khop CHINH XAC ALGO_CAT trong
 // ai.js — 8 nhom, khong phai ten tu dat.
@@ -990,28 +1030,31 @@ $('#logFilter').onclick = e => {
   $('#logFilter').style.borderColor = m.hidden ? '' : 'var(--gold3)';
 };
 $('#logFilterMenu').onclick = e => e.stopPropagation();
-document.addEventListener('click', () => {
+document.addEventListener('click', e => {
   const m = $('#logFilterMenu');
   if (m) { m.hidden = true; $('#logFilter').style.borderColor = ''; }
   // Dong panel Telegram khi click ngoai (da stopPropagation tren #tgRefresh
   // va #tgPanel nen chi dong khi click o noi khac).
   const p = $('#tgPanel');
-  if (p && !p.hidden) p.hidden = true;
+  if (p && !p.hidden && !p.contains(e.target)) p.hidden = true;
   const n = $('#notifPanel');
-  if (n && !n.hidden) n.hidden = true;
+  if (n && !n.hidden && !n.contains(e.target) && !$('#notifBellBtn')?.contains(e.target)) n.hidden = true;
 });
-// Panel FIXED gan vao nut -> cuon trang thi dong de khong troi noi bat cuong vi.
-window.addEventListener('scroll', () => {
+// Panel FIXED gan vao nut -> cuon trang ngoài thi dong, cuon TRONG panel thi GIU.
+window.addEventListener('scroll', e => {
   const p = $('#tgPanel');
-  if (p && !p.hidden) p.hidden = true;
+  if (p && !p.hidden && !p.contains(e.target)) p.hidden = true;
   const n = $('#notifPanel');
-  if (n && !n.hidden) n.hidden = true;
+  if (n && !n.hidden && !n.contains(e.target)) n.hidden = true;
 }, true);
 
 function tlRow(a) {
   const t = new Date((a.ts || 0) * 1000);
   const col = colorOf(a.algo_model);
   const cam = camOf(a);
+  const g = algoGroups([a.algo_model])[0];
+  const catName = g?.cat || 'Khác';
+
   const el = document.createElement('div');
   el.className = 'tl-row';
   el.dataset.id = a.event_id != null ? String(a.event_id) : 'ts' + (a.ts || '0');
@@ -1019,52 +1062,42 @@ function tlRow(a) {
     '<div class="tl-t"><span class="tl-hm"></span><span class="tl-sec"></span></div>' +
     '<div class="tl-mid"><div class="ln"></div><span class="tl-dot"></span></div>' +
     '<div class="tl-b">' +
-      '<div class="tl-th"><div class="no">không ảnh</div><div class="sc"></div>' +
+      '<div class="tl-th"><div class="no">không ảnh</div><div class="sc"></div><div class="box"></div>' +
         '<span class="cam"></span></div>' +
-      '<div class="tl-mn"><div class="tl-chips"><span class="tl-kind"></span></div>' +
-        '<span class="tl-ttl"></span><span class="tl-sub"></span></div>' +
-      '<div class="tl-r"><span class="tl-conf"></span>' +
-        '<div class="tl-bar"><i></i></div><span class="tl-more">Xem lại →</span></div>' +
+      '<div class="tl-mn">' +
+        '<div class="tl-chips"></div>' +
+        '<div class="tl-ttl"></div>' +
+        '<div class="tl-sub"></div>' +
+        '<div class="tl-det-box"></div>' +
+      '</div>' +
+      '<div class="tl-acts"></div>' +
     '</div>';
 
+  // 1. Cột thời gian bên trái
   el.querySelector('.tl-hm').textContent = pad(t.getHours()) + ':' + pad(t.getMinutes());
   el.querySelector('.tl-sec').textContent = ':' + pad(t.getSeconds());
+
+  // Chấm trạng thái phát sáng
   const dot = el.querySelector('.tl-dot');
   dot.style.background = col;
-  dot.style.color = col;              // box-shadow dung currentColor de tao quang sang
+  dot.style.color = col;
 
-  const g = algoGroups([a.algo_model])[0];
-  const kind = el.querySelector('.tl-kind');
-  kind.textContent = (g?.cat || 'Khác').toUpperCase();
-  kind.style.color = col;
-  kind.style.borderColor = col + '40';
+  // 2. Khung hình ảnh Thumbnail & Overlays
+  const th = el.querySelector('.tl-th');
+  const cName = a.channel_name || cam || '';
+  th.querySelector('.cam').textContent = cName ? ('Khu vực: ' + cName) : '';
 
-  el.querySelector('.tl-ttl').textContent =
-    algoName(a.algo_model, a.algo_name) || a.label || '—';
-  el.querySelector('.tl-sub').textContent =
-    [a.channel_name || cam, a.ipc_addr].filter(Boolean).join(' · ') || '—';
-  el.querySelector('.tl-th .cam').textContent = cam || '';
-
-  // Box KHONG tra do tin cay trong alarm push -> khong bay so gia. An ca thanh.
-  el.querySelector('.tl-r').firstElementChild.remove();
-  el.querySelector('.tl-bar').remove();
-
-  // Camera DANG báo động -> nút "Bỏ qua" trên thẻ: tắt viền đỏ + badge + popup
-  // của lần phát hiện này (clearAlarm cho cả camera, đúng ngữ nghĩa hiện có).
-  if (cam && activeAlarm(cam)) {
-    const b = document.createElement('button');
-    b.className = 'tl-skip';
-    b.textContent = 'Bỏ qua';
-    b.title = 'Tắt mọi hiệu ứng cảnh báo của lần phát hiện này';
-    b.onclick = e => { e.stopPropagation(); clearAlarm(cam); };
-    el.querySelector('.tl-r').prepend(b);
-  }
-
-  if (FRESH.has(a.event_id)) {
-    const n = document.createElement('span');
-    n.className = 'tl-new';
-    n.textContent = 'MỚI';
-    el.querySelector('.tl-chips').append(n);
+  // Bounding box overlay từ capture_info
+  const firstCap = Array.isArray(a.capture_info) ? a.capture_info[0] : null;
+  const boxEl = th.querySelector('.box');
+  if (firstCap && firstCap.x != null && firstCap.y != null && firstCap.w != null && firstCap.h != null) {
+    boxEl.style.left = (firstCap.x * 100) + '%';
+    boxEl.style.top = (firstCap.y * 100) + '%';
+    boxEl.style.width = (firstCap.w * 100) + '%';
+    boxEl.style.height = (firstCap.h * 100) + '%';
+    boxEl.style.display = 'block';
+  } else {
+    boxEl.style.display = 'none';
   }
 
   const img = imgOf(a);
@@ -1072,67 +1105,218 @@ function tlRow(a) {
     const im = document.createElement('img');
     im.alt = 'Ảnh phát hiện ' + (algoName(a.algo_model) || '');
     im.loading = 'lazy';
-    const th = el.querySelector('.tl-th');
-    // Chen vao DOM va gan onerror TRUOC khi gan src, keo bi race
-    th.prepend(im);
     im.onerror = () => im.remove();
+    th.prepend(im);
     im.src = img;
   }
-  // Người được nhận diện (a.person do aibox.py thêm từ compare_results):
-  // ảnh to bằng ảnh camera (.tl-th), giữa tên hành vi (.tl-mn) và nút Xem lại (.tl-r).
-  // Tên + độ chính xác phủ lên ảnh như .cam phủ lên ảnh camera — không khung viền.
-  const per = a.person;
-  if (per) {
-    const pb = document.createElement('div');
-    pb.className = 'tl-per';
-    if (per.image) {
-      const im = document.createElement('img');
-      im.alt = 'Ảnh người được nhận diện';
-      im.loading = 'lazy';
-      im.onerror = () => im.remove();
-      // Giong imgOf(): anh live la basename 'alarms/x.jpg' (tuong doi), doc lai la
-      // '/aibox/picture?...' (tuyet doi). Phai chuan hoa cung cach de khong lech.
-      const pi = per.image;
-      im.src = new URL(BASE + (pi.startsWith('/') ? pi.slice(1) : 'alarms/' + pi),
-        location.href).href;
-      pb.append(im);
-    }
-    // Thông tin nhận diện ghi rõ ra BÊN PHẢI ảnh (cột riêng, không phủ lên ảnh).
-    const txt = document.createElement('div');
-    txt.className = 'tl-per-txt';
-    const nm = document.createElement('div');
-    nm.className = 'tl-per-nm';
-    nm.textContent = per.name || '—';
-    txt.append(nm);
-    if (per.similarity != null) {
-      const sc = document.createElement('div');
-      sc.className = 'tl-per-sc';
-      sc.textContent = 'Độ chính xác ' + per.similarity + '%';
-      txt.append(sc);
-    }
-    pb.append(txt);
-    // Giữa tên hành vi (.tl-mn) và nút Xem lại (.tl-r): lùi trái từ cạnh phải thẻ.
-    el.querySelector('.tl-mn').after(pb);
-    // Badge nhận diện người, ngay BÊN PHẢI badge loại (.tl-kind) trong .tl-chips.
-    const badge = document.createElement('span');
-    badge.className = 'tl-per-badge';
-    badge.textContent = (per.name ? per.name + ' · ' : '') +
-      (per.similarity != null ? per.similarity + '%' : 'nhận diện');
-    el.querySelector('.tl-chips').append(badge);
+
+  // 3. Khối nội dung trung tâm
+  const chips = el.querySelector('.tl-chips');
+
+  // Rule Group Badge (Tên nhóm từ từ điển algoGroups)
+  const ruleBadge = document.createElement('span');
+  ruleBadge.className = 'tl-rule-badge';
+  ruleBadge.textContent = (catName || 'Khác').toUpperCase();
+  ruleBadge.style.color = col;
+  ruleBadge.style.borderColor = col + '50';
+  ruleBadge.style.background = col + '18';
+  chips.append(ruleBadge);
+
+  // Event ID (nếu có)
+  if (a.event_id) {
+    const evTag = document.createElement('span');
+    evTag.className = 'tl-type-badge';
+    evTag.style.color = 'var(--gold2)';
+    evTag.style.borderColor = 'rgba(217,162,51,0.3)';
+    evTag.textContent = '#' + a.event_id;
+    chips.append(evTag);
   }
+
+  // Mới Chip
+  if (FRESH.has(a.event_id)) {
+    const n = document.createElement('span');
+    n.className = 'tl-new';
+    n.textContent = 'MỚI';
+    chips.append(n);
+  }
+
+  // Tiêu đề cảnh báo (Lấy từ từ điển algoName hoặc a.label của API)
+  el.querySelector('.tl-ttl').textContent =
+    algoName(a.algo_model, a.algo_name) || a.label || '—';
+
+  // Subtitle: Thiết bị & IP từ API
+  const subParts = [];
+  const subCam = a.channel_name || cam;
+  if (subCam) subParts.push('Khu vực: ' + subCam);
+  if (a.ipc_addr) subParts.push('IP: ' + a.ipc_addr);
+  el.querySelector('.tl-sub').textContent = subParts.join(' · ') || '—';
+
+  // Thẻ chi tiết thực tế từ API (chỉ thêm khi dữ liệu thật tồn tại)
+  const detBox = el.querySelector('.tl-det-box');
+
+  if (Array.isArray(a.capture_info) && a.capture_info.length > 0) {
+    const detCap = document.createElement('span');
+    detCap.className = 'tl-det-item';
+    detCap.textContent = ` ${a.capture_info.length} đối tượng phát hiện`;
+    detBox.append(detCap);
+  }
+
+  if (a.area_num != null) {
+    const detArea = document.createElement('span');
+    detArea.className = 'tl-det-item';
+    detArea.textContent = `${a.area_num} người trong vùng`;
+    detBox.append(detArea);
+  }
+
+  // 4. Cụm thao tác nhanh (Quick Actions) - Luôn hiển thị tất cả các nút (Hàng 1: Ảnh gốc + Clip, Hàng 2: Mở camera)
+  const acts = el.querySelector('.tl-acts');
+  acts.innerHTML = '';
+
+  const rowTop = document.createElement('div');
+  rowTop.className = 'tl-acts-row';
+
+  // Nút 1: Xem ảnh gốc
+  const btnImg = document.createElement('button');
+  btnImg.className = 'tl-act-btn';
+  btnImg.textContent = 'Ảnh gốc';
+  btnImg.title = img ? 'Xem ảnh chụp chất lượng cao' : 'Không có ảnh chụp';
+  if (!img) btnImg.style.opacity = '0.65';
+  btnImg.onclick = e => {
+    e.stopPropagation();
+    if (img) {
+      window.open(img, '_blank');
+    } else {
+      toast({
+        sev: 'ẢNH GỐC', kind: 'warn',
+        title: 'Cảnh báo này không có ảnh chụp đính kèm từ AI Box'
+      });
+    }
+  };
+  rowTop.append(btnImg);
+
+  // Nút 2: Xem clip
+  const vidUrl = videoOf(a);
+  const btnClip = document.createElement('button');
+  btnClip.className = 'tl-act-btn';
+  btnClip.textContent = 'Xem clip';
+  btnClip.title = vidUrl ? 'Phát đoạn clip ngắn sự kiện' : 'Không có video clip';
+  if (!vidUrl) btnClip.style.opacity = '0.65';
+  btnClip.onclick = e => {
+    e.stopPropagation();
+    if (vidUrl) {
+      openVideo(a);
+    } else {
+      toast({
+        sev: 'CLIP SỰ KIỆN', kind: 'warn',
+        title: 'AI Box chưa lưu hoặc đã xoá đoạn clip của cảnh báo này'
+      });
+    }
+  };
+  rowTop.append(btnClip);
+
+  acts.append(rowTop);
+
+  // Nút 3: Mở camera (Hàng 2)
+  const btnCam = document.createElement('button');
+  btnCam.className = 'tl-act-btn btn-cam';
+  btnCam.textContent = 'Mở camera →';
+  btnCam.title = cam ? 'Xem trực tiếp camera' : 'Không có thông tin camera';
+  if (!cam) btnCam.style.opacity = '0.65';
+  btnCam.onclick = e => {
+    e.stopPropagation();
+    if (cam) {
+      openDetail(cam);
+    } else {
+      toast({
+        sev: 'CAMERA', kind: 'warn',
+        title: 'Không xác định được kênh camera của cảnh báo này'
+      });
+    }
+  };
+  acts.append(btnCam);
+
+  // Người được nhận diện khuôn mặt (Mặc định hiển thị khung nhận diện)
+  const per = a.person;
+  const isRecognized = per && (per.name || per.image);
+  const phHTML = '<span class="ph-ic"><svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:26px;height:26px;display:block"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="ph-tx">Chưa nhận diện</span>';
+
+  const pb = document.createElement('div');
+  pb.className = 'tl-per' + (isRecognized ? ' has-per' : '');
+
+  if (per && per.image) {
+    const im = document.createElement('img');
+    im.alt = 'Ảnh người được nhận diện';
+    im.loading = 'lazy';
+    im.onerror = () => {
+      const ph = document.createElement('div');
+      ph.className = 'tl-per-ph';
+      ph.innerHTML = phHTML;
+      im.replaceWith(ph);
+    };
+    const pi = per.image;
+    im.src = new URL(BASE + (pi.startsWith('/') ? pi.slice(1) : 'alarms/' + pi), location.href).href;
+    pb.append(im);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'tl-per-ph';
+    ph.innerHTML = phHTML;
+    pb.append(ph);
+  }
+
+  const txt = document.createElement('div');
+  txt.className = 'tl-per-txt';
+
+  const nm = document.createElement('div');
+  nm.className = 'tl-per-nm';
+  nm.textContent = isRecognized ? (per.name || 'Người lạ') : 'Không nhận diện được';
+  if (!isRecognized) nm.style.color = 'rgba(255,255,255,0.45)';
+  txt.append(nm);
+
+  const sc = document.createElement('div');
+  sc.className = 'tl-per-sc';
+  if (per && per.similarity != null) {
+    sc.textContent = 'Độ chính xác ' + per.similarity + '%';
+  } else {
+    sc.style.color = 'rgba(255,255,255,0.3)';
+    sc.style.fontSize = '10px';
+    sc.textContent = 'Chưa có thông tin';
+  }
+  txt.append(sc);
+
+  // Nút xem chi tiết người được nhận diện
+  const btnPer = document.createElement('button');
+  btnPer.className = 'tl-per-btn';
+  btnPer.textContent = 'Chi tiết →';
+  btnPer.title = isRecognized ? 'Xem chi tiết thông tin đối tượng nhận diện' : 'Không có thông tin nhận diện';
+  if (!isRecognized) btnPer.style.opacity = '0.5';
+  btnPer.onclick = e => {
+    e.stopPropagation();
+    if (isRecognized) {
+      openPersonDetail(per, a);
+    } else {
+      toast({
+        sev: 'NHẬN DIỆN', kind: 'warn',
+        title: 'Sự kiện này chưa nhận diện được thông tin nhân sự'
+      });
+    }
+  };
+  txt.append(btnPer);
+
+  if (isRecognized) {
+    pb.title = 'Bấm để xem chi tiết đối tượng nhận diện';
+    pb.onclick = e => {
+      e.stopPropagation();
+      openPersonDetail(per, a);
+    };
+  }
+
+  pb.append(txt);
+  el.querySelector('.tl-mn').after(pb);
   if (videoOf(a)) {
     const p = document.createElement('div');
     p.className = 'tl-play';
     p.innerHTML = '<span>&#9654;</span>';
     el.querySelector('.tl-th').append(p);
-    el.querySelector('.tl-more').textContent = 'Xem lại →';
-    el.onclick = () => openVideo(a);
-  } else if (cam && S.api[cam]) {
-    el.querySelector('.tl-more').textContent = 'Mở camera →';
-    el.onclick = () => openDetail(cam);
-  } else {
-    el.querySelector('.tl-more').remove();
-    el.style.cursor = 'default';
   }
   return el;
 }
@@ -1266,14 +1450,22 @@ async function checkBox() {
 
 let unread = 0;
 const bumpUnread = () => {
-  unread++;
-  const b = $('#navUnread');
-  b.hidden = false;
-  b.textContent = unread > 99 ? '99+' : String(unread);
+  updateUnreadBadge();
+  setTimeout(() => {
+    const bell = $('#notifBellBtn');
+    if (bell) {
+      bell.classList.add('bell-ring');
+      setTimeout(() => bell.classList.remove('bell-ring'), 1500);
+    }
+  }, 1000);
 };
 
 startAlarms(ev => {
-  if (ev.kind === 'sse' || !isDetect(ev)) { markTiles(); return; }
+  if (ev.kind === 'sse' || !isDetect(ev)) {
+    markTiles();
+    updateUnreadBadge();
+    return;
+  }
   // Đánh dấu thẻ vừa tới là MỚI -> thẻ trong tab Nhật ký hiện badge "MỚI".
   if (ev.event_id != null) { FRESH.add(ev.event_id); if (FRESH.size > 200) FRESH.clear(); }
   const cam = camOf(ev);
@@ -1282,29 +1474,40 @@ startAlarms(ev => {
   else bumpUnread();
   if (S.view === 'live' || (S.view === 'detail' && S.focus === cam)) paintHistory();
 }, name => {                                    // clearAlarm -> ve lai ngay
-  // clearAlarm là CHỖ DUY NHẤT mọi nút "Bỏ qua" đi qua (popup, badge tile,
-  // #histAck, thẻ nhật ký) -> tắt hết hiệu ứng của lần phát hiện ở đúng một nơi.
   markTiles();
+  updateUnreadBadge();
   if (S.view === 'log') loadLog();              // nút "Bỏ qua" trên thẻ biến mất
   if (S.view === 'live' || (S.view === 'detail' && S.focus === name)) paintHistory();
   paintRail();
 });
 
-/** Vien nhay do tren tile dang canh bao. */
+// Backup Real-time Polling: Tự động kiểm tra cảnh báo mới từ server mỗi 4 giây
+setInterval(async () => {
+  try {
+    const added = await loadAlarmHistory();
+    if (added > 0) {
+      updateUnreadBadge();
+      markTiles();
+      if (S.view === 'log') paintAlarms();
+      if (S.view === 'live' || (S.view === 'detail')) paintHistory();
+    }
+  } catch { /* network silent fallback */ }
+}, 4000);
+
+/** Vien nhay do tren tile dang canh bao (chi hien khi co canh bao CHUA DOC). */
 function markTiles() {
   for (const [name, t] of S.tiles) {
-    const a = activeAlarm(name);
-    t.box.classList.toggle('detect', !!a);
+    const unreadCamCount = alarms().filter(a => isDetect(a) && camOf(a) === name && !SEEN.has(notifKey(a))).length;
+    const isUnread = unreadCamCount > 0;
+    t.box.classList.toggle('detect', isUnread);
     let b = t.box.querySelector('.t-ai');
-    if (!a) { b?.remove(); continue; }
+    if (!isUnread) { b?.remove(); continue; }
     if (!b) {
       b = document.createElement('span');
       b.className = 'badge off t-ai';
-      b.title = 'Bấm để bỏ qua cảnh báo';
-      b.onclick = e => { e.stopPropagation(); clearAlarm(name); };
       t.box.querySelector('.t-top').insertBefore(b, t.ar);
     }
-    b.textContent = '⚠ ' + a.n;
+    b.textContent = '⚠ ' + unreadCamCount;
   }
   paintAreaBadge();
   paintRail();
@@ -1371,7 +1574,7 @@ export function paintHistBar(wrap, nEl, ackEl, list, active, emptyMsg) {
 /** Thanh lich su o detail (camera dang focus) + thanh toan box o man Live (#hist2). */
 export function paintHistory() {
   const name = S.focus;
-  paintHistBar($('#hist'), $('#histN'), $('#histAck'),
+  paintHistBar($('#hist'), $('#histN'), null,
     name ? alarmsOf(name) : [], name ? activeAlarm(name) : null,
     'Chưa có cảnh báo nào từ AI box cho camera này');
   paintHistBar($('#hist2'), $('#histN2'), null,
@@ -1417,9 +1620,10 @@ function paintRail() {
     const el = RAIL.get(nm) || railCard(nm);
     if (wrap.children[i] !== el) wrap.insertBefore(el, wrap.children[i] || null);
     const st = statusOf(nm);
+    const unreadCamCount = alarms().filter(a => isDetect(a) && camOf(a) === nm && !SEEN.has(notifKey(a))).length;
     el.classList.toggle('off', st.cls === 'off');
     el.classList.toggle('wait', st.cls === 'wait');
-    el.classList.toggle('al', !!activeAlarm(nm));
+    el.classList.toggle('al', unreadCamCount > 0);
     el.querySelector('.c-nm').textContent = CAMN.get(nm) || nm;
     // Badge số người trong vùng: đặt BÊN TRÁI nút LIVE, cùng màu tím như trên tile.
     const ms = el.querySelector('.rail-ms');
@@ -1427,11 +1631,9 @@ function paintRail() {
     // Đồng bộ với tile (paintAreaBadge): chưa có số thì hiện 0, không hiện '—'.
     if (areaOn(nm) || ac) { ms.hidden = false; ms.textContent = '👥 ' + (ac ? ac.n : 0); }
     else ms.hidden = true;
-    // Badge số cảnh báo: đồng bộ với tile (markTiles) — dùng activeAlarm(nm).n,
-    // KHÔNG dùng alarmsOf().length (số bản ghi lịch sử khác số cảnh báo đang báo).
+    // Badge số cảnh báo: chỉ hiển thị khi có cảnh báo CHƯA ĐỌC
     const al = el.querySelector('.rail-al');
-    const nAl = activeAlarm(nm)?.n || 0;
-    if (nAl > 0) { al.hidden = false; al.textContent = '⚠ ' + nAl; }
+    if (unreadCamCount > 0) { al.hidden = false; al.textContent = '⚠ ' + unreadCamCount; }
     else al.hidden = true;
     const sEl = el.querySelector('.c-st');
     // Chi hien pill trang thai khi LIVE / OFFLINE — khong hien "TAM DUNG"/"DANG KET NOI".
@@ -1440,8 +1642,6 @@ function paintRail() {
     sEl.querySelector('.s').textContent = st.txt;
   });
 }
-
-$('#histAck').onclick = () => S.focus && clearAlarm(S.focus);
 
 // Lan chuot tren thanh lich su -> truot ngang (thanh nay cao 150px, khong scroll doc).
 // passive:false vi co preventDefault. Chi chan khi con cho truot theo huong do, khong
@@ -2221,8 +2421,49 @@ async function saveAddItem() {
 
 const LD = {x: null, kind: 'face'};
 
+function openPersonDetail(per, a) {
+  if (!per) return;
+  const pName = per.name || 'Người lạ / Chưa rõ tên';
+  $('#ldTitle').textContent = pName;
+  $('#ldSub').textContent = 'Nhận diện khuôn mặt · ' + (a && (a.rule_name || a.event_id) ? ('Cảnh báo #' + (a.event_id || '')) : 'Thông tin nhân sự');
+
+  const imgEl = $('#ldImg');
+  let url = null;
+  if (per.image) {
+    url = new URL(BASE + (per.image.startsWith('/') ? per.image.slice(1) : 'alarms/' + per.image), location.href).href;
+  } else if (per.image_path) {
+    url = libImg(per.image_path);
+  }
+  imgEl.style.backgroundImage = url ? 'url(' + JSON.stringify(url) + ')' : '';
+  imgEl.innerHTML = url ? '' : '<span class="msg">Không có ảnh nhận diện</span>';
+
+  const rows = [];
+  rows.push(row('Tên nhân sự', escHTML(pName)));
+  if (per.similarity != null) rows.push(row('Độ chính xác', per.similarity + '%'));
+  if (per.person_id) rows.push(row('Mã nhân sự', escHTML('#' + per.person_id), 'dim'));
+  if (per.lib_name) rows.push(row('Thư viện', escHTML(per.lib_name)));
+  if (per.sex != null && per.sex !== 99) rows.push(row('Giới tính', per.sex === 1 ? 'Nam' : 'Nữ'));
+  if (per.tel) rows.push(row('Điện thoại', escHTML(per.tel)));
+  if (per.email) rows.push(row('Email', escHTML(per.email)));
+  if (per.certificate_no) rows.push(row('Số giấy tờ', escHTML(per.certificate_no)));
+
+  if (a) {
+    const cName = a.channel_name || (a.channel_id ? ('Kênh ' + a.channel_id) : '');
+    if (cName) rows.push(row('Kênh Camera', escHTML(cName)));
+    if (a.ts) {
+      const d = new Date(a.ts * 1000);
+      if (!isNaN(d.getTime())) rows.push(row('Thời gian phát hiện', d.toLocaleString('vi-VN')));
+    }
+  }
+
+  $('#ldFields').innerHTML = rows.join('');
+  if ($('#ldDel')) $('#ldDel').hidden = true;
+  $('#ldWrap').hidden = false;
+}
+
 function openLibDetail(x, kind) {
   LD.x = x; LD.kind = kind;
+  if ($('#ldDel')) $('#ldDel').hidden = false;
   $('#ldTitle').textContent = libName(x);
   $('#ldSub').textContent = (kind === 'face' ? 'Nhân sự' : 'Đồng phục')
     + ' · ' + x.lib_name + ' · ' + libDate(x.create_time || 0);
@@ -2405,7 +2646,8 @@ go('live');
 loadAlarmHistory()
   .then(n => { if (n && S.view === 'log') loadLog();
                if (n && S.view === 'lib') loadLibrary();
-               paintHistory(); })        // ve ca thanh live (#hist2) lan dau sau khi nap
+               paintHistory();
+               updateUnreadBadge(); })        // ve ca thanh live (#hist2) lan dau sau khi nap
   .catch(e => console.warn('khong nap duoc lich su canh bao:', e.message));
 // Seed 'so nguoi trong vung' ngay sau refresh (khong cho box gui event dau tien).
 // Loi khong gay: seedAreaCount nuot moi loi, badge chi hien 0 cho den khi box gui.
