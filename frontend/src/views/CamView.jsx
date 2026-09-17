@@ -38,12 +38,18 @@ const testUrl = async src => {
   try {
     const p = await fetch(API + '?name=' + encodeURIComponent(tmp) +
       '&src=' + encodeURIComponent(src), {method: 'PUT'});
-    if (!p.ok) return {err: (await p.text()) || 'PUT ' + p.status, tmp};
+    if (!p.ok) {
+      fetch(API + '?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
+      return {err: (await p.text()) || 'PUT ' + p.status, tmp};
+    }
     await new Promise(r => setTimeout(r, 1800));
     const j = await fetch(API).then(r => r.json());
     const o = j[tmp] || {};
     const pr = o.producers?.[0];
-    if (!pr) return {err: 'go2rtc không mở được luồng (kiểm tra lại URL RTSP hoặc IP camera)', tmp};
+    if (!pr) {
+      fetch(API + '?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
+      return {err: 'go2rtc không mở được luồng (kiểm tra lại URL RTSP hoặc IP camera)', tmp};
+    }
     const rx = (pr.receivers || []).find(x => x.codec?.codec_type === 'video');
     return {
       tmp,
@@ -52,9 +58,8 @@ const testUrl = async src => {
       audio: (pr.medias || []).some(m => m.startsWith('audio'))
     };
   } catch (e) {
-    return {err: e.message, tmp};
-  } finally {
     fetch(API + '?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
+    return {err: e.message, tmp};
   }
 };
 
@@ -68,7 +73,7 @@ function AddPreview({streamName, msg}) {
     <div className="preview" data-roi data-drawing="off" id="mPrev"
       style={{position: 'relative', aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#080a0d', border: '1px solid var(--bd)', borderRadius: 14, overflow: 'hidden'}}>
       {streamName ? (
-        <div ref={wrapRef} style={{position: 'absolute', inset: 0}} />
+        <div ref={wrapRef} style={{position: 'absolute', inset: 0, width: '100%', height: '100%'}} />
       ) : (
         <span className="msg" id="mPrevMsg" style={{color: 'rgba(245,245,247,.45)', font: '500 12px/1 var(--m)'}}>{msg}</span>
       )}
@@ -241,6 +246,9 @@ export default function CamView({onOpen, onAi}) {
   const doTest = async () => {
     const finalRtsp = mergeRtsp('', addUrl.trim(), addUser.trim(), addPass);
     if (!validRtsp(finalRtsp)) { setTest({st: 'invalid', rows: null}); setProbeStream(null); return; }
+    if (probeStream) {
+      fetch(API + '?src=' + encodeURIComponent(probeStream), {method: 'DELETE'}).catch(() => {});
+    }
     setTestBusy(true);
     setTest({st: 'testing', rows: null});
     setProbeStream(null);
