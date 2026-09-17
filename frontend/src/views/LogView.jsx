@@ -350,85 +350,83 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
   return (
     <section className="view" id="v-log">
       <div className="view-wrap" style={{overflow: 'hidden'}}>
-        <div className="bar" style={{position: 'relative', gap: 12, flexWrap: 'wrap', marginBottom: 16}}>
-          <span className="view-h" data-i18n="tLog">Nhật ký sự kiện AI</span>
-          <span className="view-sub" id="logSource">GET /api/alarms · SSE /events</span>
-          <div className="grow" />
-
-          <div className="tb" style={{gap: 2}}>
-            <div className="drop" id="logFilterDrop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
-              <button data-goldbtn id="logFilter" style={{height: 36, padding: '0 13px', borderRadius: 12}}
-                      onClick={e => { e.stopPropagation(); setMenuOpen(m => !m); }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-                <span id="logFilterLabel">{label}</span>
-              </button>
-              {menuOpen && (
-                <div className="menu" id="logFilterMenu" data-glass onClick={e => e.stopPropagation()}
-                     style={{top: 'calc(100% + 8px)', right: 0, minWidth: 200, borderRadius: 14, background: 'linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05))', border: '1px solid rgba(255,255,255,.18)', boxShadow: '0 16px 34px rgba(0,0,0,.5)', position: 'absolute'}}>
-                  <div id="logFilterList">
-                    <div className="msec">Camera</div>
-                    {[...cams.keys()].sort((x, y) => chNum(x) - chNum(y)).map(k => {
-                      const c = cams.get(k);
-                      return <FilterRow key={'c' + k} cls={inc(logCams, k) ? 'on' : ''}
-                        label={c.label} n={c.n} color={KIND_COLOR['Khác']}
-                        onClick={() => setLogCams(toggleIn(logCams, k, camAll))} />;
-                    })}
-                    <div className="msep" />
-                    <div className="msec">Hành vi</div>
-                    {[...byCat.keys()].sort().map(cat => {
-                      const m = byCat.get(cat), keys = [...m.keys()];
-                      const color = KIND_COLOR[cat] || KIND_COLOR['Khác'];
-                      const total = [...m.values()].reduce((sum, x) => sum + x.n, 0);
-                      const on = keys.every(k => inc(logAlgos, k));
-                      return (
-                        <Fragment key={'g' + cat}>
-                          <FilterRow cls={on ? 'on' : ''} label={cat} n={total} color={color}
-                            onClick={() => {
-                              const s = new Set(logAlgos || algoAll);
-                              keys.forEach(k => { if (on) s.delete(k); else s.add(k); });
-                              setLogAlgos((s.size === 0 || s.size === algoAll.length) ? null : s);
-                            }} />
-                          {keys.map(k => {
-                            const e = m.get(k);
-                            return <FilterRow key={cat + k} cls={'sub' + (inc(logAlgos, k) ? ' on' : '')}
-                              label={e.label} n={e.n} color={color}
-                              onClick={() => setLogAlgos(toggleIn(logAlgos, k, algoAll))} />;
-                          })}
-                        </Fragment>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+        {/* Frame chứa danh sách nhật ký + thanh bộ lọc & nút Đã xem */}
+        <div data-glass className="nosb" style={{borderRadius: 20, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
+          {/* Thanh công cụ: Ngày bên trái, Nút Lọc và nút Đã xem bên phải */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            padding: '12px 18px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(0, 0, 0, 0.18)'
+          }}>
+            <div className="tl-day" style={{padding: 0, margin: 0, flex: 1, minWidth: 0}}>
+              <span className="d">{d0 ? 'Hôm nay · ' + pad(d0.getDate()) + '/' + pad(d0.getMonth() + 1) : ''}</span>
+              <div className="ln" />
             </div>
 
-            <span className="tb-div" />
-            <button data-glassbtn id="logRefresh" style={{height: 36, padding: '0 13px', borderRadius: 12}}
-                    onClick={refresh}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
-              <span data-i18n="refresh">Làm mới</span>
-            </button>
+            <div style={{display: 'flex', alignItems: 'center', gap: 10, flex: 'none'}}>
+              <div className="drop" id="logFilterDrop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
+                <button data-goldbtn id="logFilter" style={{height: 36, padding: '0 14px', borderRadius: 10}}
+                        onClick={e => { e.stopPropagation(); setMenuOpen(m => !m); }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                  <span id="logFilterLabel">{label}</span>
+                </button>
+                {menuOpen && (
+                  <div className="menu" id="logFilterMenu" data-glass onClick={e => e.stopPropagation()}
+                       style={{top: 'calc(100% + 8px)', right: 0, minWidth: 220, borderRadius: 14, background: 'linear-gradient(180deg,rgba(20,24,32,.95),rgba(12,15,20,.95))', border: '1px solid rgba(255,255,255,.18)', boxShadow: '0 16px 34px rgba(0,0,0,.6)', position: 'absolute', zIndex: 100}}>
+                    <div id="logFilterList">
+                      <div className="msec">Camera</div>
+                      {[...cams.keys()].sort((x, y) => chNum(x) - chNum(y)).map(k => {
+                        const c = cams.get(k);
+                        return <FilterRow key={'c' + k} cls={inc(logCams, k) ? 'on' : ''}
+                          label={c.label} n={c.n} color={KIND_COLOR['Khác']}
+                          onClick={() => setLogCams(toggleIn(logCams, k, camAll))} />;
+                      })}
+                      <div className="msep" />
+                      <div className="msec">Hành vi</div>
+                      {[...byCat.keys()].sort().map(cat => {
+                        const m = byCat.get(cat), keys = [...m.keys()];
+                        const color = KIND_COLOR[cat] || KIND_COLOR['Khác'];
+                        const total = [...m.values()].reduce((sum, x) => sum + x.n, 0);
+                        const on = keys.every(k => inc(logAlgos, k));
+                        return (
+                          <Fragment key={'g' + cat}>
+                            <FilterRow cls={on ? 'on' : ''} label={cat} n={total} color={color}
+                              onClick={() => {
+                                const s = new Set(logAlgos || algoAll);
+                                keys.forEach(k => { if (on) s.delete(k); else s.add(k); });
+                                setLogAlgos((s.size === 0 || s.size === algoAll.length) ? null : s);
+                              }} />
+                            {keys.map(k => {
+                              const e = m.get(k);
+                              return <FilterRow key={cat + k} cls={'sub' + (inc(logAlgos, k) ? ' on' : '')}
+                                label={e.label} n={e.n} color={color}
+                                onClick={() => setLogAlgos(toggleIn(logAlgos, k, algoAll))} />;
+                            })}
+                          </Fragment>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-            <span className="tb-div" />
-            <button data-glassbtn id="logReadAll" title="Đánh dấu tất cả đã xem"
-                    style={{height: 36, padding: '0 13px', borderRadius: 12}} onClick={readAll}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-              <span>Đã xem</span>
-            </button>
+              <button data-glassbtn id="logReadAll" title="Đánh dấu tất cả đã xem"
+                      style={{height: 36, padding: '0 14px', borderRadius: 10}} onClick={readAll}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span>Đã xem</span>
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* ui.js paintAlarms() tự sinh .tl-day + .tl bên trong #logBox */}
-        <div data-glass className="nosb" style={{borderRadius: 20, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
-          <div id="logBox" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column'}}>
+          <div id="logBox" className="nosb" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto'}}>
             {!loaded ? null
               : !rows.length
                 ? <div className="hint" style={{padding: '16px 18px'}}>Chưa có cảnh báo nào từ AI box</div>
-                : (<>
-                  <div className="tl-day">
-                    <span className="d">{d0 ? 'Hôm nay · ' + pad(d0.getDate()) + '/' + pad(d0.getMonth() + 1) : ''}</span>
-                    <div className="ln" />
-                  </div>
+                : (
                   <div className="tl">
                     {rows.map((a, i) => (
                       <TlRow key={a.event_id != null ? a.event_id : 'ts' + (a.ts || 0)}
@@ -436,7 +434,7 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
                         onSkip={skipAlarm} onOpen={onOpen} onSeen={onSeen} onClip={onClip} />
                     ))}
                   </div>
-                </>)}
+                )}
           </div>
         </div>
       </div>
@@ -467,73 +465,109 @@ function TlRow({a, isNew, cleared, onSkip, onOpen, onSeen, onClip}) {
   const vid = videoOf(a);
   const per = a.person;
 
-  // Nút dưới cùng: "Xem lại →" (có clip) > "Mở camera →" (có luồng) > không có.
-  const moreTxt = vid ? 'Xem lại →' : (cam ? 'Mở camera →' : null);
-  const clickable = !!moreTxt;
-
-  // Camera đang báo động -> hiện nút "Bỏ qua" (cleared đã xóa).
   const showSkip = cam && !cleared.has(cam);
+  const eventIdText = a.event_id ? `#${a.event_id}` : (a.id ? `#${a.id}` : null);
+  const camLocation = a.channel_name || cam || 'Chưa xác định';
+  const ipText = a.ipc_addr || '192.168.21.181';
 
   return (
     <div className="tl-row"
-         data-id={a.event_id != null ? String(a.event_id) : 'ts' + (a.ts || '0')}
-         style={{cursor: clickable ? 'pointer' : 'default'}}
-         onClick={clickable ? () => {
-           onSeen?.(a.event_id);
-           // Có clip -> chiếu lên stage của detail; không có -> chỉ mở camera.
-           if (vid) onClip?.(cam, {url: vid, algo: algoName(a.algo_model) || a.label});
-           else onOpen?.(cam);
-         } : undefined}>
+         data-id={a.event_id != null ? String(a.event_id) : 'ts' + (a.ts || '0')}>
       <div className="tl-t">
         <span className="tl-hm">{pad(t.getHours()) + ':' + pad(t.getMinutes())}</span>
         <span className="tl-sec">{':' + pad(t.getSeconds())}</span>
       </div>
-      <div className="tl-mid"><div className="ln" /><span className="tl-dot" style={{background: col, color: col}} /></div>
-      <div className="tl-b">
-        <div className="tl-th">
-          {img
-            ? <ImgThumb src={img} alt={'Ảnh phát hiện ' + (algoName(a.algo_model) || '')} />
-            : <div className="no">không ảnh</div>}
-          <div className="sc" />
-          <span className="cam">{cam || ''}</span>
-          {vid && <div className="tl-play"><span>&#9654;</span></div>}
+      <div className="tl-mid">
+        <div className="ln" />
+        <span className="tl-dot" style={{background: col, color: col}} />
+      </div>
+
+      <div className="tl-b tl-b-3part">
+        {/* Phần 1: Ảnh snapshot camera & Thông tin Báo động */}
+        <div className="tl-sec-1">
+          <div className="tl-th">
+            {img
+              ? <ImgThumb src={img} alt={'Ảnh phát hiện ' + (algoName(a.algo_model) || '')} />
+              : <div className="no">không ảnh</div>}
+            <div className="sc" />
+            <span className="cam">Khu vực: {camLocation}</span>
+            {vid && <div className="tl-play"><span>&#9654;</span></div>}
+          </div>
+
+          <div className="tl-mn">
+            <div className="tl-chips">
+              <span className="tl-kind" style={{color: col, borderColor: col + '40'}}>
+                {(g?.cat || 'Khác').toUpperCase()}
+              </span>
+              {eventIdText && <span className="tl-id-badge">{eventIdText}</span>}
+              {isNew && <span className="tl-new">MỚI</span>}
+            </div>
+            <span className="tl-ttl">{algoName(a.algo_model, a.algo_name) || a.label || '—'}</span>
+            <span className="tl-sub">Khu vực: {camLocation} · IP: {ipText}</span>
+          </div>
         </div>
 
-        <div className="tl-mn">
-          <div className="tl-chips">
-            <span className="tl-kind" style={{color: col, borderColor: col + '40'}}>
-              {(g?.cat || 'Khác').toUpperCase()}
-            </span>
-            {isNew && <span className="tl-new">MỚI</span>}
-            {per && (
-              <span className="tl-per-badge">
-                {(per.name ? per.name + ' · ' : '') +
-                  (per.similarity != null ? per.similarity + '%' : 'nhận diện')}
-              </span>
+        {/* Phần 2: Khung Nhận diện đối tượng (Person / Object Card) */}
+        <div className="tl-sec-2">
+          {/* Khung ảnh / avatar nhận diện */}
+          <div className={'tl-per-box' + (per?.image ? ' has-img' : ' no-img')}>
+            {per?.image ? (
+              <ImgThumb src={absUrl(per.image.startsWith('/') ? per.image : 'alarms/' + per.image)} alt="Ảnh đối tượng" />
+            ) : (
+              <div className="tl-no-per">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span>Không nhận diện được</span>
+              </div>
             )}
           </div>
-          <span className="tl-ttl">{algoName(a.algo_model, a.algo_name) || a.label || '—'}</span>
-          <span className="tl-sub">{[a.channel_name || cam, a.ipc_addr].filter(Boolean).join(' · ') || '—'}</span>
+
+          {/* Các thông tin text nằm NGOÀI khung ảnh */}
+          <div className="tl-per-txt">
+            <div className="tl-per-nm">{per?.name ? per.name.toUpperCase() : 'Không nhận diện được'}</div>
+            <div className={'tl-per-sc' + (per?.similarity != null ? ' active' : '')}>
+              {per?.similarity != null ? `Độ chính xác ${per.similarity}%` : 'Chưa có thông tin'}
+            </div>
+            <div className="tl-per-badge-blue">
+              {`${a.count || a.objects_count || 1} đối tượng phát hiện`}
+            </div>
+            <div className={'tl-per-link' + (per?.name ? '' : ' off')}>Chi tiết &rarr;</div>
+          </div>
         </div>
 
-        {/* Thông tin nhận diện nằm TRONG .tl-b (giữa .tl-mn và .tl-r) như vanilla —
-            là flex child nên cùng hàng, không phải grid item thứ 4 bị đẩy xuống hàng dưới. */}
-        {per && (
-          <div className="tl-per">
-            {per.image && <ImgThumb src={absUrl(per.image.startsWith('/') ? per.image : 'alarms/' + per.image)} alt="Ảnh người được nhận diện" />}
-            <div className="tl-per-txt">
-              <div className="tl-per-nm">{per.name || '—'}</div>
-              {per.similarity != null && <div className="tl-per-sc">Độ chính xác {per.similarity}%</div>}
-            </div>
+        {/* Phần 3: Thao tác (Action Buttons) */}
+        <div className="tl-sec-3">
+          <div className="tl-actions-top">
+            {/* Code gốc nút Bỏ qua:
+            {showSkip && (
+              <button className="tl-btn-opt" onClick={e => { e.stopPropagation(); onSkip(e, cam); }}>
+                Bỏ qua
+              </button>
+            )} */}
+            {img && (
+              <button className="tl-btn-opt" onClick={e => { e.stopPropagation(); window.open(img, '_blank'); }}>
+                Ảnh gốc
+              </button>
+            )}
+            {vid && (
+              <button className="tl-btn-opt" onClick={e => {
+                e.stopPropagation();
+                onSeen?.(a.event_id);
+                onClip?.(cam, {url: vid, algo: algoName(a.algo_model) || a.label});
+              }}>
+                Xem clip
+              </button>
+            )}
           </div>
-        )}
 
-        <div className="tl-r">
-          {showSkip && (
-            <button className="tl-skip" title="Tắt mọi hiệu ứng cảnh báo của lần phát hiện này"
-                    onClick={e => onSkip(e, cam)}>Bỏ qua</button>
+          {cam && (
+            <button className="tl-btn-main" onClick={e => {
+              e.stopPropagation();
+              onSeen?.(a.event_id);
+              onOpen?.(cam);
+            }}>
+              Mở camera &rarr;
+            </button>
           )}
-          {moreTxt && <span className="tl-more">{moreTxt}</span>}
         </div>
       </div>
     </div>

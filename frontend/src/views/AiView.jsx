@@ -932,9 +932,9 @@ export default function AiView({focus, go}) {
   const backToList = () => go?.('cam');
 
   return (
-    <section className="view" id="v-ai">
-      <div className="view-wrap" style={{gap: 13}}>
-        <div className="bar" style={{gap: 12, flexWrap: 'wrap'}}>
+    <section className="view" id="v-ai" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
+      <div className="view-wrap" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: 14, boxSizing: 'border-box', overflow: 'hidden'}}>
+        <div className="bar" style={{flex: 'none', gap: 12, flexWrap: 'wrap'}}>
           <button data-glassbtn onClick={backToList} style={{height: 36, padding: '0 14px'}}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
               strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
@@ -964,7 +964,7 @@ export default function AiView({focus, go}) {
 
         {/* ---- phần cấu hình AI (chỉ khi đã chọn camera) ---- */}
         {ch && (
-          <div className="ai-wrap nosb" style={{padding: 0, gap: 13}}>
+          <div className="ai-wrap nosb" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 0, gap: 10, overflow: 'hidden'}}>
             <div data-glass className="fn-tabs" id="aiFns"
               style={{flex: 'none', borderRadius: 16, padding: 8, marginBottom: 0}}>
               {smart.length === 0 && <span className="fn-none">Camera này chưa bật thuật toán nào</span>}
@@ -985,9 +985,9 @@ export default function AiView({focus, go}) {
             </div>
 
             <div data-aicols className="ai-cols"
-              style={{gridTemplateColumns: 'minmax(0,1.3fr) minmax(0,1fr)', gap: 14}}>
-              <div className="ai-left">
-                <div data-glass className="ai-tools" style={{borderRadius: 16, padding: 10, gap: 9}}>
+              style={{flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(0,1fr)', gap: 12, alignItems: 'stretch', overflow: 'hidden'}}>
+              <div className="ai-left" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden'}}>
+                <div data-glass className="ai-tools" style={{flex: 'none', borderRadius: 14, padding: '8px 12px', gap: 9}}>
                   <button data-goldbtn onClick={toggleDraw} style={{height: 34, padding: '0 14px'}}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="#2a2410" strokeWidth="1.9"
                       strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
@@ -1006,7 +1006,7 @@ export default function AiView({focus, go}) {
                     => vùng trông to, lệch khỏi ảnh và nhoè. Giữ 16/9 của .ai-shot
                     thì hộp == khung video, toạ độ vùng khớp đúng ảnh camera. */}
                 <div className="ai-shot" id="aiStage" data-roi data-drawing={mode === 'draw' ? 'on' : 'off'}
-                  style={{minHeight: 0}}>
+                  style={{width: '100%', aspectRatio: '16/9', position: 'relative'}}>
                   <div id="aiShot" ref={shotRef}>
                     <div ref={streamWrapRef} style={{position: 'absolute', inset: 0}} />
                   </div>
@@ -1022,14 +1022,14 @@ export default function AiView({focus, go}) {
                 </div>
               </div>
 
-              <div className="ai-right" style={{borderRadius: 20}}>
+              <div className="ai-right" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', borderRadius: 20, overflow: 'hidden'}}>
                 <div className="cfg-tabs" id="aiTabs"
-                  style={{alignSelf: 'flex-start', margin: '14px 14px 0', flexWrap: 'wrap'}}>
+                  style={{flex: 'none', alignSelf: 'flex-start', margin: '10px 12px 0', flexWrap: 'wrap'}}>
                   <button data-t="rule" className={tab === 'rule' ? 'on' : ''} onClick={() => setTab('rule')}>Quy tắc</button>
                   <button data-t="sched" className={tab === 'sched' ? 'on' : ''} onClick={() => setTab('sched')}>Lịch canh phòng</button>
                   <button data-t="link" className={tab === 'link' ? 'on' : ''} onClick={() => setTab('link')}>Liên kết hành động</button>
                 </div>
-                <div className="cfg-pane nosb" id="aiPane">
+                <div className="cfg-pane nosb" id="aiPane" style={{flex: 1, minHeight: 0, overflowY: 'auto', padding: 12}}>
                   {!sel
                     ? <div className="zone-none">Chọn một thuật toán để cấu hình</div>
                     : pane}
@@ -1037,15 +1037,15 @@ export default function AiView({focus, go}) {
               </div>
             </div>
 
-            <div data-glass style={{flex: 'none', borderRadius: 18, padding: '13px 16px'}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: 9, marginBottom: 11, flexWrap: 'wrap'}}>
+            <div data-glass style={{flex: 'none', height: '11vh', minHeight: 70, maxHeight: 100, display: 'flex', flexDirection: 'column', borderRadius: 14, padding: '7px 12px', overflow: 'hidden'}}>
+              <div style={{flex: 'none', display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5, flexWrap: 'wrap'}}>
                 <span className="card-h">Vùng phát hiện</span>
                 <div className="grow"></div>
                 <span style={{font: '400 10px/1 var(--b)', color: 'rgba(229,229,234,.38)', whiteSpace: 'nowrap'}}>
                   bấm vùng để chọn trên ảnh · Sửa / Xóa từng vùng
                 </span>
               </div>
-              <div className="zone-list" id="aiZones">{zones}</div>
+              <div className="zone-list nosb" id="aiZones" style={{flex: 1, minHeight: 0, overflowY: 'auto'}}>{zones}</div>
             </div>
           </div>
         )}
