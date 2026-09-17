@@ -2,7 +2,6 @@ import React, {useEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {mask, fixPct, nice, G, API} from '../api/client.js';
 import {useVideoStream} from '../hooks/useVideoStream.js';
-import {mask, fixPct, nice, G} from '../api/client.js';
 
 /**
  * CamView — port of index.html:633-673 (section #v-cam) + the camera table,
@@ -38,12 +37,10 @@ const testUrl = async src => {
   const tmp = '_probe_' + Date.now();
   try {
     const p = await fetch(API + '?name=' + encodeURIComponent(tmp) +
-    const p = await fetch(G + 'api/streams?name=' + encodeURIComponent(tmp) +
       '&src=' + encodeURIComponent(src), {method: 'PUT'});
     if (!p.ok) return {err: (await p.text()) || 'PUT ' + p.status, tmp};
     await new Promise(r => setTimeout(r, 1800));
     const j = await fetch(API).then(r => r.json());
-    const j = await fetch(G + 'api/streams').then(r => r.json());
     const o = j[tmp] || {};
     const pr = o.producers?.[0];
     if (!pr) return {err: 'go2rtc không mở được luồng (kiểm tra lại URL RTSP hoặc IP camera)', tmp};
@@ -56,9 +53,8 @@ const testUrl = async src => {
     };
   } catch (e) {
     return {err: e.message, tmp};
-    return {err: e.message};
   } finally {
-    fetch(G + 'api/streams?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
+    fetch(API + '?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
   }
 };
 
@@ -284,7 +280,6 @@ export default function CamView({onOpen, onAi}) {
     const cid = (j.data || {}).channel_id;
     const stream = cid != null ? 'ch' + cid : null;
     if (stream) fetch(API + '?name=' + encodeURIComponent(stream) +
-    if (stream) fetch(G + 'api/streams?name=' + encodeURIComponent(stream) +
       '&src=' + encodeURIComponent(srcOf()), {method: 'PUT'}).catch(() => {});
     closeAddModal();
     await load();
@@ -335,7 +330,6 @@ export default function CamView({onOpen, onAi}) {
     if (j.code !== 0) return alert('Box từ chối: ' + (j.msg || 'code ' + j.code));
     setShowEdit(false);
     fetch(API + '?name=' + encodeURIComponent(eForm.stream) +
-    fetch(G + 'api/streams?name=' + encodeURIComponent(eForm.stream) +
       '&src=' + encodeURIComponent(fixPct(rtsp)), {method: 'PUT'}).catch(() => {});
     await load();
   };
@@ -348,7 +342,6 @@ export default function CamView({onOpen, onAi}) {
     const r = await cnPost('channel/delete', {channel_id_list: [cid]});
     if (r.code !== 0) return alert(r.msg || 'Lỗi ' + r.code);
     fetch(API + '?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
-    fetch(G + 'api/streams?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
     await load();
   };
 
@@ -372,8 +365,7 @@ export default function CamView({onOpen, onAi}) {
       const algos = c.algos || [];
       // URL thật từ go2rtc stream (che mật khẩu) — port S.api ui.js:594.
       const url = mask((streams[nm]?.producers || [])[0]?.url || '—');
-      // Độ trễ = bitrate Mbps (port latOf ui.js:532): chỉ có khi có receiver đang xem,
-      // không có phiên xem thì '—'.
+      // Bitrate Mbps / trạng thái luồng
       const lat = bps[nm] != null ? bps[nm].toFixed(1) + ' Mbps' : '—';
       return (
         <div className="trow" key={nm} onClick={() => onOpen && onOpen(nm)}>
@@ -384,10 +376,8 @@ export default function CamView({onOpen, onAi}) {
             <div className="c-algos">{algos.length ? algos.length + ' thuật toán AI' : 'chưa bật AI'}</div>
           </div>
           <span className="c-zone">{c.name || '—'}</span>
-          <span className="c-url">{c.rtsp ? mask(c.rtsp) : '—'}</span>
-          <span className="c-lat">{'—'}</span>
-          <span className="c-url">{url}</span>
-          <span className="c-lat">{lat}</span>
+          <span className="c-url">{c.rtsp ? mask(c.rtsp) : url}</span>
+          <span className="c-lat" style={{textAlign: 'center'}}>{lat}</span>
           <span className={'c-st' + (c.status === 1 ? '' : ' off')}>
             <span className="dot" /><span className="s">{c.status === 1 ? 'ONLINE' : 'OFFLINE'}</span>
           </span>
