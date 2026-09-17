@@ -575,7 +575,11 @@ export default function LiveView({onOpen, onSeen, unread}) {
                     cuộn ngang · bấm để xem lại clip
                   </span>
                 </div>
-                <div className="hist-list nosb" id="hist2">
+                <div className="hist-list" id="hist2" onWheel={e => {
+                  if (e.deltaY !== 0) {
+                    e.currentTarget.scrollLeft += e.deltaY;
+                  }
+                }}>
                   {histList.length === 0 ? (
                     <span className="h-none">Chưa có cảnh báo nào từ AI box</span>
                   ) : (

@@ -247,15 +247,24 @@ aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direct
 .hist-h{display:flex;align-items:center;gap:9px}
 .hist-t{font:600 9.5px/1 var(--m);letter-spacing:.1em;color:var(--gold)}
 .hist-n{font:400 10px/1 var(--m);color:var(--ghost)}
-.hist-list{flex:1;min-height:0;display:flex;align-items:flex-start;gap:8px;
-  overflow-x:auto;overflow-y:hidden;padding-bottom:2px}
-.h-item{flex:none;width:132px;border:1px solid var(--bd3);border-radius:6px;overflow:hidden;
-  cursor:pointer;background:var(--card)}
-.h-item:hover{border-color:var(--gold3)}
+.hist-list{flex:1;min-height:0;display:flex;align-items:flex-start;gap:10px;
+  overflow-x:auto;overflow-y:hidden;padding:6px 4px 10px;margin:-4px -4px -4px;
+  scrollbar-width:none;-ms-overflow-style:none}
+.hist-list::-webkit-scrollbar{display:none;width:0;height:0}
+.h-item{position:relative;flex:none;width:132px;border:1px solid var(--bd3);border-radius:8px;overflow:hidden;
+  cursor:pointer;background:var(--card);transition:transform .2s cubic-bezier(.2,.8,.2,1),border-color .2s ease,box-shadow .2s ease;
+  z-index:1}
+.h-item:hover{transform:translateY(-4px);z-index:10;border-color:var(--gold2);
+  box-shadow:0 8px 20px rgba(0,0,0,.6),0 0 14px rgba(217,162,51,.3)}
 .h-item.on{border-color:var(--gold)}
 .h-item img{width:100%;height:74px;object-fit:cover;display:block;background:#0a0d12}
 .h-noimg{width:100%;height:74px;display:grid;place-items:center;font:400 9px/1 var(--m);
   color:var(--bd3)}
+.h-play{position:absolute;top:0;left:0;right:0;height:74px;display:grid;place-items:center;
+  background:rgba(4,6,10,.42);opacity:0;transition:opacity .18s ease;pointer-events:none;z-index:2}
+.h-play span{width:26px;height:26px;border-radius:50%;background:rgba(217,162,51,.92);
+  color:#08090b;display:grid;place-items:center;font-size:10px;padding-left:2px}
+.h-item:hover .h-play{opacity:1}
 .h-meta{padding:5px 6px;display:flex;flex-direction:column;gap:2px}
 .h-algo{font:500 10px/1.25 var(--b);color:var(--fg2);overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}

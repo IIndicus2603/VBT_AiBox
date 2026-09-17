@@ -1,4 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
+import {createPortal} from 'react-dom';
+import {mask, fixPct, nice, G, API} from '../api/client.js';
+import {useVideoStream} from '../hooks/useVideoStream.js';
 import {mask, fixPct, nice, G} from '../api/client.js';
 
 /**
@@ -34,24 +37,48 @@ const cnPost = async (path, body) => {
 const testUrl = async src => {
   const tmp = '_probe_' + Date.now();
   try {
+    const p = await fetch(API + '?name=' + encodeURIComponent(tmp) +
     const p = await fetch(G + 'api/streams?name=' + encodeURIComponent(tmp) +
       '&src=' + encodeURIComponent(src), {method: 'PUT'});
-    if (!p.ok) return {err: (await p.text()) || 'PUT ' + p.status};
+    if (!p.ok) return {err: (await p.text()) || 'PUT ' + p.status, tmp};
     await new Promise(r => setTimeout(r, 1800));
+    const j = await fetch(API).then(r => r.json());
     const j = await fetch(G + 'api/streams').then(r => r.json());
     const o = j[tmp] || {};
     const pr = o.producers?.[0];
-    if (!pr) return {err: 'go2rtc không mở được luồng'};
+    if (!pr) return {err: 'go2rtc không mở được luồng (kiểm tra lại URL RTSP hoặc IP camera)', tmp};
     const rx = (pr.receivers || []).find(x => x.codec?.codec_type === 'video');
-    return {codec: rx ? nice(rx.codec.codec_name) : null,
-            res: rx?.codec?.width ? rx.codec.width + '×' + rx.codec.height : null,
-            audio: (pr.medias || []).some(m => m.startsWith('audio'))};
+    return {
+      tmp,
+      codec: rx ? nice(rx.codec.codec_name) : null,
+      res: rx?.codec?.width ? rx.codec.width + '×' + rx.codec.height : null,
+      audio: (pr.medias || []).some(m => m.startsWith('audio'))
+    };
   } catch (e) {
+    return {err: e.message, tmp};
     return {err: e.message};
   } finally {
     fetch(G + 'api/streams?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
   }
 };
+
+function AddPreview({streamName, msg}) {
+  const wsUrl = streamName ? G + 'api/ws?src=' + encodeURIComponent(streamName) : null;
+  const {ref: wrapRef} = useVideoStream(
+    wsUrl,
+    {mode: 'webrtc,mse', media: 'video', visibilityThreshold: 0.01}
+  );
+  return (
+    <div className="preview" data-roi data-drawing="off" id="mPrev"
+      style={{position: 'relative', aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#080a0d', border: '1px solid var(--bd)', borderRadius: 14, overflow: 'hidden'}}>
+      {streamName ? (
+        <div ref={wrapRef} style={{position: 'absolute', inset: 0}} />
+      ) : (
+        <span className="msg" id="mPrevMsg" style={{color: 'rgba(245,245,247,.45)', font: '500 12px/1 var(--m)'}}>{msg}</span>
+      )}
+    </div>
+  );
+}
 
 const chIdOf = name => {
   const m = /^ch(\d+)$/.exec(name || '');
@@ -60,10 +87,18 @@ const chIdOf = name => {
 
 // Nối lại URL RTSP với user/pass mới — port mergeRtsp() ai.js:59.
 const mergeRtsp = (original, shown, username, password) => {
-  const old = /^([a-z]+:\/\/)([^:@/]+):([^@/]*)@(.+)$/i.exec(original || '');
-  const next = /^([a-z]+:\/\/)(?:[^:@/]+(?::[^@/]*)?@)?(.+)$/i.exec(shown || '');
-  if (!old || !next) return original || shown || '';
-  return next[1] + (username || old[2]) + ':' + (password || old[3]) + '@' + next[2];
+  const url = (shown || original || '').trim();
+  if (!url) return '';
+  const m = /^([a-z]+:\/\/)(?:([^:@/]+)(?::([^@/]*))?@)?(.+)$/i.exec(url);
+  if (!m) return url;
+  const proto = m[1];
+  const oldUser = m[2] || '';
+  const oldPass = m[3] || '';
+  const rest = m[4];
+  const u = username != null && username !== '' ? username : oldUser;
+  const p = password != null && password !== '' ? password : oldPass;
+  if (!u && !p) return proto + rest;
+  return proto + u + ':' + p + '@' + rest;
 };
 
 const validRtsp = u => /^rtsp:\/\/\S+$/i.test(u);
@@ -143,7 +178,24 @@ export default function CamView({onOpen, onAi}) {
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   /* -------- quét mạng LAN -------- */
+  const discoverRef = useRef(null);
+
+  useEffect(() => {
+    if (!discover) return;
+    const handleClickOutside = e => {
+      if (discoverRef.current && !discoverRef.current.contains(e.target)) {
+        setDiscover(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [discover]);
+
   const doScan = async () => {
+    if (discover && !discover.busy) {
+      setDiscover(null);
+      return;
+    }
     setDiscover({busy: true});
     try {
       const s = await cnPost('discover', {});
@@ -159,44 +211,70 @@ export default function CamView({onOpen, onAi}) {
   };
 
   const prefillAdd = (url, name) => {
-    setAddUrl(url); setAddName(name); setTest({st: 'idle', rows: null}); setShowAdd(true);
+    setAddUrl(url); setAddUser(''); setAddPass(''); setAddName(name); setAddCustom('');
+    setTest({st: 'idle', rows: null}); setProbeStream(null); setShowAdd(true);
   };
 
   /* -------- modal thêm camera -------- */
   const [addUrl, setAddUrl] = useState('');
+  const [addUser, setAddUser] = useState('');
+  const [addPass, setAddPass] = useState('');
   const [addName, setAddName] = useState('');
+  const [addCustom, setAddCustom] = useState('');
   const [media, setMedia] = useState('');
   const [test, setTest] = useState({st: 'idle', rows: null});
+  const [probeStream, setProbeStream] = useState(null);
   const [addBusy, setAddBusy] = useState(false);
   const [addHint, setAddHint] = useState('Camera mới hiện ngay trong lưới Live');
   const [testBusy, setTestBusy] = useState(false);
 
+  const closeAddModal = () => {
+    if (probeStream) {
+      fetch(API + '?src=' + encodeURIComponent(probeStream), {method: 'DELETE'}).catch(() => {});
+      setProbeStream(null);
+    }
+    setShowAdd(false);
+  };
+
   const srcOf = () => {
-    const u = fixPct(addUrl.trim());
+    const merged = mergeRtsp('', addUrl.trim(), addUser.trim(), addPass);
+    const u = fixPct(merged);
     return media === 'video' && !u.includes('#') ? u + '#video' : u;
   };
 
   const doTest = async () => {
-    if (!validRtsp(addUrl.trim())) { setTest({st: 'invalid', rows: null}); return; }
+    const finalRtsp = mergeRtsp('', addUrl.trim(), addUser.trim(), addPass);
+    if (!validRtsp(finalRtsp)) { setTest({st: 'invalid', rows: null}); setProbeStream(null); return; }
     setTestBusy(true);
     setTest({st: 'testing', rows: null});
+    setProbeStream(null);
     const r = await testUrl(srcOf());
     setTest({st: r.err ? 'bad' : 'ok', rows: r});
+    if (r.tmp && !r.err) {
+      setProbeStream(r.tmp);
+    } else {
+      setProbeStream(null);
+    }
     setTestBusy(false);
   };
 
   const doAdd = async () => {
-    const url = addUrl.trim(), name = addName.trim();
+    const rawUrl = addUrl.trim();
+    const url = mergeRtsp('', rawUrl, addUser.trim(), addPass);
+    const name = addName.trim();
+    const custom = addCustom.trim();
     if (!validRtsp(url)) { setTest({st: 'invalid', rows: null}); return; }
-    if (!name) return alert('Tên camera: bắt buộc, không được chỉ toàn khoảng trắng');
-    if (name.length > 64) return alert('Tên camera: tối đa 64 ký tự');
+    if (!name) return alert('Tên channel: bắt buộc, không được chỉ toàn khoảng trắng');
+    if (name.length > 64) return alert('Tên channel: tối đa 64 ký tự');
     if (url.length > 256) return alert('URL RTSP tối đa 256 ký tự (cẩn thận với credential dài)');
     const hint = addHint;
     setAddHint('Đang thêm vào box…');
     setAddBusy(true);
     let j;
     try {
-      j = await cnPost('channel/add', {channel_name: name, rtsp: url, transport_type: 1});
+      j = await cnPost('channel/add', {
+        channel_name: name, rtsp: url, transport_type: 1, custom_code: custom,
+      });
     } catch (e) { j = {code: -1, msg: e.message}; }
     finally { setAddBusy(false); setAddHint(hint); }
     if (j.code !== 0) {
@@ -205,9 +283,10 @@ export default function CamView({onOpen, onAi}) {
     }
     const cid = (j.data || {}).channel_id;
     const stream = cid != null ? 'ch' + cid : null;
+    if (stream) fetch(API + '?name=' + encodeURIComponent(stream) +
     if (stream) fetch(G + 'api/streams?name=' + encodeURIComponent(stream) +
       '&src=' + encodeURIComponent(srcOf()), {method: 'PUT'}).catch(() => {});
-    setShowAdd(false);
+    closeAddModal();
     await load();
   };
 
@@ -255,6 +334,7 @@ export default function CamView({onOpen, onAi}) {
     finally { setEBusy(false); setEHint(hint); }
     if (j.code !== 0) return alert('Box từ chối: ' + (j.msg || 'code ' + j.code));
     setShowEdit(false);
+    fetch(API + '?name=' + encodeURIComponent(eForm.stream) +
     fetch(G + 'api/streams?name=' + encodeURIComponent(eForm.stream) +
       '&src=' + encodeURIComponent(fixPct(rtsp)), {method: 'PUT'}).catch(() => {});
     await load();
@@ -267,12 +347,10 @@ export default function CamView({onOpen, onAi}) {
     if (!window.confirm('Xoá camera "' + name + '" khỏi box?')) return;
     const r = await cnPost('channel/delete', {channel_id_list: [cid]});
     if (r.code !== 0) return alert(r.msg || 'Lỗi ' + r.code);
+    fetch(API + '?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
     fetch(G + 'api/streams?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
     await load();
   };
-
-  /* -------- đồng bộ (nút Làm mới bảng) -------- */
-  const doReload = async () => { await load(); };
 
   /* -------- trạng thái công suất -------- */
   const hrColor = hr == null ? '' : hr < 20 ? 'var(--err2)' : hr < 50 ? 'var(--warn)' : 'var(--ok)';
@@ -306,6 +384,8 @@ export default function CamView({onOpen, onAi}) {
             <div className="c-algos">{algos.length ? algos.length + ' thuật toán AI' : 'chưa bật AI'}</div>
           </div>
           <span className="c-zone">{c.name || '—'}</span>
+          <span className="c-url">{c.rtsp ? mask(c.rtsp) : '—'}</span>
+          <span className="c-lat">{'—'}</span>
           <span className="c-url">{url}</span>
           <span className="c-lat">{lat}</span>
           <span className={'c-st' + (c.status === 1 ? '' : ' off')}>
@@ -354,60 +434,57 @@ export default function CamView({onOpen, onAi}) {
     <>
       <section className="view" id="v-cam">
         <div className="view-wrap">
-          <div className="bar" style={{position: 'relative', gap: 12, flexWrap: 'wrap', marginBottom: 16}}>
-            <span className="view-h" data-i18n="tCams">Danh sách camera</span>
-            <div className="grow" />
-            <div className="tb" style={{gap: 8}}>
-              <div data-glass className="cap" style={{borderRadius: 14, padding: '9px 14px'}}>
-                <span className="cap-k">Công suất còn</span>
-                <span className="cap-v" id="camHr" style={hrColor ? {color: hrColor} : undefined}>{hr != null ? hr + '%' : '—'}</span>
-                <div className="cap-bar"><i id="camHrBar" className={hrBarCls} style={{width: (hr == null ? 0 : hr) + '%'}} /></div>
-              </div>
-              <span className="tb-div" />
-              <button data-glassbtn id="discoverBtn" style={{height: 36, padding: '0 15px'}} onClick={doScan}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}><path d="M15 3v4a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V4.5" /><path d="M12 8V4M5 8a7 7 0 1 1-.1 10" /></svg>
-                Quét camera
-              </button>
-              <span className="tb-div" />
-              <button data-goldbtn id="addBtn" style={{flex: 'none'}} onClick={() => { setAddUrl(''); setAddName(''); setTest({st: 'idle', rows: null}); setAddHint('Camera mới hiện ngay trong lưới Live'); setShowAdd(true); }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="#2a2410" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d="M12 5v14M5 12h14" /></svg>
-                Thêm camera RTSP
-              </button>
-              <button data-glassbtn id="camReload" style={{height: 36, padding: '0 15px'}} onClick={doReload}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" /></svg>
-                <span data-i18n="refresh">Làm mới</span>
-              </button>
-            </div>
+          <div className="nosb" style={{flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column'}}>
+            <div data-glass className="tbl" style={{borderRadius: 20, flex: 'none', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14}}>
+              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, position: 'relative'}} ref={discoverRef}>
+                <div data-glass className="cap" style={{borderRadius: 14, padding: '9px 14px'}}>
+                  <span className="cap-k">Công suất còn</span>
+                  <span className="cap-v" id="camHr" style={hrColor ? {color: hrColor} : undefined}>{hr != null ? hr + '%' : '—'}</span>
+                  <div className="cap-bar"><i id="camHrBar" className={hrBarCls} style={{width: (hr == null ? 0 : hr) + '%'}} /></div>
+                </div>
+                <button data-glassbtn id="discoverBtn" style={{height: 36, padding: '0 15px'}} onClick={doScan}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}><path d="M15 3v4a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V4.5" /><path d="M12 8V4M5 8a7 7 0 1 1-.1 10" /></svg>
+                  Quét camera
+                </button>
+                <button data-goldbtn id="addBtn" style={{flex: 'none'}} onClick={() => {
+                  setAddUrl(''); setAddUser(''); setAddPass(''); setAddName(''); setAddCustom(''); setMedia('');
+                  setTest({st: 'idle', rows: null}); setProbeStream(null); setAddHint('Camera mới hiện ngay trong lưới Live'); setShowAdd(true);
+                }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#2a2410" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d="M12 5v14M5 12h14" /></svg>
+                  Thêm camera RTSP
+                </button>
 
-            {discover && (
-              <div id="discoverBox" className="discover-box">
-                {discover.busy ? (
-                  <div className="al-load">Đang quét mạng…</div>
-                ) : discover.err ? (
-                  <div className="al-load" style={{color: 'var(--err2)'}}>Không quét được: {discover.err}</div>
-                ) : discover.empty ? (
-                  <div className="al-load">Không tìm thấy camera nào trên mạng</div>
-                ) : (
-                  discover.devs.map((d, i) => (
-                    <div className="d-row" key={i}>
-                      <div className="d-main">
-                        <div className="d-l1">
-                          <span className="d-ip">{d.addr || d.ip}</span>
-                          <span className="d-st">{d.manufacturer || '—'}</span>
-                        </div>
-                        <span className="d-l2">{(d.manufacturer || '—') + ' · ' + (d.addr || d.ip) + ' · chưa thêm vào box'}</span>
-                      </div>
-                      <button className="d-add" onClick={() => prefillAdd('rtsp://' + d.ip + ':554/', d.ip)}>Thêm</button>
+                {discover && (
+                  <div id="discoverBox" className="discover-box" style={{right: 0}}>
+                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px 8px 8px', borderBottom: '1px solid rgba(255,255,255,.08)', marginBottom: 8}}>
+                      <span style={{fontSize: 12, fontWeight: 700, color: '#f5f5f7'}}>Kết quả quét mạng LAN</span>
+                      <button style={{background: 'none', border: 'none', color: 'var(--ghost)', cursor: 'pointer', fontSize: 13, padding: '2px 6px'}} onClick={() => setDiscover(null)}>✕</button>
                     </div>
-                  ))
+                    {discover.busy ? (
+                      <div className="al-load">Đang quét mạng…</div>
+                    ) : discover.err ? (
+                      <div className="al-load" style={{color: 'var(--err2)'}}>Không quét được: {discover.err}</div>
+                    ) : discover.empty ? (
+                      <div className="al-load">Không tìm thấy camera nào trên mạng</div>
+                    ) : (
+                      discover.devs.map((d, i) => (
+                        <div className="d-row" key={i}>
+                          <div className="d-main" style={{flex: 1, minWidth: 0}}>
+                            <div className="d-l1" style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                              <span className="d-ip">{d.addr || d.ip}</span>
+                              <span className="d-st" style={{fontSize: 11, color: 'var(--ghost)'}}>{d.manufacturer || '—'}</span>
+                            </div>
+                            <span className="d-l2" style={{fontSize: 11, color: 'var(--dim)'}}>{(d.manufacturer || '—') + ' · ' + (d.addr || d.ip) + ' · chưa thêm vào box'}</span>
+                          </div>
+                          <button className="d-add" data-glassbtn style={{height: 28, padding: '0 12px', fontSize: 11}} onClick={() => { setDiscover(null); prefillAdd('rtsp://' + (d.addr || d.ip) + ':554/', d.addr || d.ip); }}>Thêm</button>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
 
-          <div className="nosb" style={{flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column'}}>
-            <div data-glass className="tbl" style={{borderRadius: 20, flex: 'none'}}>
-              <div className="thead" data-camhead style={{padding: '14px 16px'}}>
+              <div className="thead" data-camhead style={{padding: '4px 0 10px', borderBottom: '1px solid var(--bd4)'}}>
                 <span>ID</span><span>Tên camera</span><span>Khu vực</span><span>Luồng RTSP</span>
                 <span style={{textAlign: 'center'}}>Độ trễ</span><span>Trạng thái</span>
                 <span style={{textAlign: 'right'}}>Hành động</span>
@@ -419,67 +496,96 @@ export default function CamView({onOpen, onAi}) {
       </section>
 
       {/* ==================== MODAL · THÊM CAMERA RTSP ==================== */}
-      {showAdd && (
-        <div className="overlay" data-overlay id="modal" onClick={e => { if (e.target === e.currentTarget) setShowAdd(false); }}>
-          <div className="modal" data-modal data-glass style={{width: 'min(900px,100%)'}} onClick={e => e.stopPropagation()}>
-            <div className="m-head">
-              <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5}}>
-                <span className="m-title">Thêm camera vào box</span>
-                <span className="view-sub">POST /api/channel/add · type=2 rtsp · go2rtc đồng bộ theo</span>
+      {showAdd && createPortal((
+        <div className="overlay" data-overlay id="modal" style={{position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 16px', overflowY: 'auto'}} onClick={e => { if (e.target === e.currentTarget) closeAddModal(); }}>
+          <div className="modal" data-modal data-glass style={{width: 'min(920px, 100%)', borderRadius: 22, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden'}} onClick={e => e.stopPropagation()}>
+            <div className="m-head" style={{padding: '18px 22px 14px', borderBottom: '1px solid rgba(255,255,255,.06)', flex: 'none'}}>
+              <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4}}>
+                <span className="m-title" style={{fontSize: 17, fontWeight: 700}}>Thêm camera vào box</span>
+                <span className="view-sub" style={{fontSize: 11, color: 'var(--ghost)'}}>POST /api/channel/add · type=2 rtsp · go2rtc đồng bộ theo</span>
               </div>
-              <button className="m-x" data-mx id="mClose" onClick={() => setShowAdd(false)}>✕</button>
+              <button className="m-x" data-mx id="mClose" onClick={closeAddModal}>✕</button>
             </div>
-            <div className="m-body nosb">
-              <div className="m-col">
-                <div className="field"><label>URL RTSP</label>
-                  <input id="mUrl" className="mono" placeholder="rtsp://admin:pass@192.168.21.178:554/ch01" value={addUrl}
-                    onChange={e => { setAddUrl(e.target.value); setTest({st: 'idle', rows: null}); }} />
-                  <span className="hint">Bridge tự escape '%' thành %25 trước khi gửi box (box
-                    percent-decode, raw '%' bị từ chối) · riêng go2rtc cũng cần %25.</span></div>
-                <div className="field"><label>Tên camera</label>
+            <div className="m-body nosb" style={{padding: '20px 22px', gap: 24, display: 'grid', gridTemplateColumns: '1.2fr 1fr', flex: 1, minHeight: 0, overflowY: 'auto'}}>
+              <div className="m-col" style={{display: 'flex', flexDirection: 'column', gap: 16}}>
+                <div className="field">
+                  <label style={{fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ghost)'}}>URL RTSP</label>
+                  <input id="mUrl" className="mono" placeholder="rtsp://192.168.21.178:554/ch01" value={addUrl}
+                    onChange={e => { setAddUrl(e.target.value); setTest({st: 'idle', rows: null}); setProbeStream(null); }} />
+                  <span className="hint">Nếu điền Username / Password bên dưới, bridge tự ghép vào URL trước khi gửi (và escape '%' → %25 cho box + go2rtc).</span>
+                </div>
+
+                <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12}}>
+                  <div className="field">
+                    <label style={{fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ghost)'}}>USERNAME</label>
+                    <input id="mUser" placeholder="admin" value={addUser} onChange={e => setAddUser(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label style={{fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ghost)'}}>PASSWORD</label>
+                    <input id="mPass" type="password" placeholder="(để trống nếu không có)" value={addPass} onChange={e => setAddPass(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label style={{fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ghost)'}}>TÊN CHANNEL</label>
                   <input id="mName" placeholder="cam01" maxLength="64" required value={addName} onChange={e => setAddName(e.target.value)} />
-                  <span className="hint">Thành <code>channel_name</code> trên box: tối đa 64 ký tự,
-                    không trùng · tên luồng go2rtc box tự đặt là <code>ch&lt;id&gt;</code></span></div>
-                <div className="field"><label>Media</label>
+                  <span className="hint">Thành <strong>channel_name</strong> trên box: tối đa 64 ký tự, không trùng · tên luồng go2rtc box tự đặt là <code>ch&lt;id&gt;</code></span>
+                </div>
+
+                <div className="field">
+                  <label style={{fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ghost)'}}>CUSTOM ID (TUỲ CHỌN)</label>
+                  <input id="mCustom" placeholder="VD: entrance-cam-01" maxLength="64" value={addCustom} onChange={e => setAddCustom(e.target.value)} />
+                  <span className="hint">Truyền làm <strong>custom_code</strong> lên box để định danh riêng</span>
+                </div>
+
+                <div className="field">
+                  <label style={{fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ghost)'}}>MEDIA</label>
                   <div data-seg className="seg" id="mMedia" style={{alignSelf: 'flex-start'}}>
-                    <button data-media="" className={'on' === media ? 'on' : ''} onClick={() => setMedia('')}>Video + âm thanh</button>
+                    <button data-media="" className={media === '' ? 'on' : ''} onClick={() => setMedia('')}>Video + âm thanh</button>
                     <button data-media="video" className={media === 'video' ? 'on' : ''} onClick={() => setMedia('video')}>Chỉ video</button>
                   </div>
-                  <span className="hint">Chỉ video: bỏ track audio ở luồng go2rtc (box vẫn nhận đủ)</span></div>
+                  <span className="hint">Chỉ video: bỏ track audio ở luồng go2rtc (box vẫn nhận đủ)</span>
+                </div>
               </div>
-              <div className="m-col">
-                <div className="preview" data-roi data-drawing="off" id="mPrev" style={{aspectRatio: '16/9'}}>
-                  <span className="msg" id="mPrevMsg">{paintTestMsg()}</span>
+
+              <div className="m-col" style={{display: 'flex', flexDirection: 'column', gap: 16}}>
+                <AddPreview streamName={probeStream} msg={paintTestMsg()} />
+
+                <div className="card" data-glass style={{borderRadius: 16, padding: '14px 16px', background: 'rgba(255,255,255,.02)', border: '1px solid var(--bd3)'}}>
+                  <div className="card-h" style={{fontSize: 10, fontWeight: 700, letterSpacing: '.1em', color: 'var(--ghost)'}}>KẾT QUẢ KIỂM TRA</div>
+                  <div id="mRows" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, font: '400 12px/1.4 var(--m)', color: 'var(--dim)'}}>
+                    {renderTestRows()}
+                  </div>
                 </div>
-                <div className="card" data-glass style={{borderRadius: 16}}>
-                  <div className="card-h">Kết quả kiểm tra</div>
-                  <div id="mRows" style={{display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8, font: '400 11px/1.3 var(--m)', color: 'var(--dim)'}}>{renderTestRows()}</div>
-                </div>
-                <button data-glassbtn id="mTest" style={{height: 38, justifyContent: 'center'}} onClick={doTest} disabled={testBusy}>Kiểm tra kết nối</button>
+
+                <button data-glassbtn id="mTest" style={{height: 42, justifyContent: 'center', width: '100%', fontSize: 13, fontWeight: 600, borderRadius: 12}} onClick={doTest} disabled={testBusy}>
+                  {testBusy ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}
+                </button>
               </div>
             </div>
-            <div className="m-foot">
-              <span className="hint" id="mHint">{addHint}</span>
+
+            <div className="m-foot" style={{padding: '14px 22px 18px', borderTop: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', flex: 'none'}}>
+              <span className="hint" id="mHint" style={{fontSize: 11, color: 'var(--ghost)'}}>{addHint}</span>
               <div className="grow" />
-              <button data-glassbtn id="mCancel" style={{height: 36, padding: '0 16px'}} onClick={() => setShowAdd(false)}>Hủy</button>
-              <button data-goldbtn id="mAdd" style={{height: 36, padding: '0 18px'}} onClick={doAdd} disabled={addBusy}>Thêm vào box</button>
+              <button data-glassbtn id="mCancel" style={{height: 38, padding: '0 18px', borderRadius: 10}} onClick={closeAddModal}>Hủy</button>
+              <button data-goldbtn id="mAdd" style={{height: 38, padding: '0 20px', borderRadius: 10}} onClick={doAdd} disabled={addBusy}>Thêm vào box</button>
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* ==================== MODAL · SỬA CAMERA TRÊN BOX ==================== */}
-      {showEdit && (
-        <div className="overlay" data-overlay id="editModal" onClick={e => { if (e.target === e.currentTarget) setShowEdit(false); }}>
-          <div className="modal" data-modal data-glass style={{width: 'min(620px,100%)'}} onClick={e => e.stopPropagation()}>
-            <div className="m-head">
-              <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5}}>
-                <span className="m-title">Sửa camera · <span id="eTitle">{eForm.stream + ' · ' + (eForm.name || '—')}</span></span>
-                <span className="view-sub">POST /api/channel/update · type=2 rtsp · password để trống = giữ nguyên</span>
+      {showEdit && createPortal((
+        <div className="overlay" data-overlay id="editModal" style={{position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 16px', overflowY: 'auto'}} onClick={e => { if (e.target === e.currentTarget) setShowEdit(false); }}>
+          <div className="modal" data-modal data-glass style={{width: 'min(620px,100%)', borderRadius: 22}} onClick={e => e.stopPropagation()}>
+            <div className="m-head" style={{padding: '18px 22px 14px', borderBottom: '1px solid rgba(255,255,255,.06)'}}>
+              <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4}}>
+                <span className="m-title" style={{fontSize: 17, fontWeight: 700}}>Sửa camera · <span id="eTitle">{eForm.stream + ' · ' + (eForm.name || '—')}</span></span>
+                <span className="view-sub" style={{fontSize: 11, color: 'var(--ghost)'}}>POST /api/channel/update · type=2 rtsp · password để trống = giữ nguyên</span>
               </div>
               <button className="m-x" data-mx id="eClose" onClick={() => setShowEdit(false)}>✕</button>
             </div>
-            <div className="m-body nosb">
+            <div className="m-body nosb" style={{padding: '20px 22px'}}>
               <div className="m-col">
                 <div className="field"><label>Channel Name</label>
                   <input id="eName" maxLength="64" required value={eForm.name} onChange={e => setEForm(f => ({...f, name: e.target.value}))} />
@@ -504,15 +610,15 @@ export default function CamView({onOpen, onAi}) {
                   <span className="hint">Mã tùy chỉnh (custom_code) trên box</span></div>
               </div>
             </div>
-            <div className="m-foot">
+            <div className="m-foot" style={{padding: '14px 22px 18px', borderTop: '1px solid rgba(255,255,255,.06)'}}>
               <span className="hint" id="eHint">{eHint}</span>
               <div className="grow" />
-              <button data-glassbtn id="eCancel" style={{height: 36, padding: '0 16px'}} onClick={() => setShowEdit(false)}>Hủy</button>
-              <button data-goldbtn id="eSave" style={{height: 36, padding: '0 18px'}} onClick={doSave} disabled={eBusy}>Lưu thay đổi</button>
+              <button data-glassbtn id="eCancel" style={{height: 38, padding: '0 18px', borderRadius: 10}} onClick={() => setShowEdit(false)}>Hủy</button>
+              <button data-goldbtn id="eSave" style={{height: 38, padding: '0 20px', borderRadius: 10}} onClick={doSave} disabled={eBusy}>Lưu thay đổi</button>
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </>
   );
 }
