@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState, useCallback} from 'react';
-import {G, BASE, API, jget, post, hms, imgOf} from '../api/client.js';
+import {G, BASE, API, jget, post, hms, imgOf, nice} from '../api/client.js';
 import useEvents from '../api/useEvents.js';
 import {useVideoStream} from '../hooks/useVideoStream.js';
 
@@ -47,7 +47,7 @@ const camOf = a => (a?.channel_id != null ? 'ch' + a.channel_id : null);
  * #t-tile (index.html 1096-1108) và đúng class CSS. State được đẩy lên cha qua
  * onState(name, state, err) để rail trái + lưới đồng bộ như S.tiles gốc.
  */
-function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, onOpen}) {
+function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, onOpen, stream, bps}) {
   const [state, setState] = useState('wait');
   const [err, setErr] = useState(null);
   const [meta, setMeta] = useState(null); // '1080p · 25fps' — set sau frame đầu
@@ -58,8 +58,12 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
     d => {
       setState(d.state);
       if (d.error) setErr(d.error);
-      if (d.state === 'live') setErr(null);
-      // fps / resolution không lấy được trực tiếp qua hook -> dùng meta mặc định.
+      if (d.state === 'live') {
+        setErr(null);
+        // Resolution từ video element đang phát (port metaOf app.js:109) — set 1 lần.
+        const v = wrapRef.current?.querySelector('video');
+        if (v?.videoHeight) setMeta(prev => prev || v.videoHeight + 'p');
+      }
     },
   );
 
@@ -78,6 +82,16 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
   // omAlertBorder (đỏ nháy) sẵn có.
   const hasAlarm = !!(alarm && alarm.n > 0);
 
+  // Codec + bitrate từ go2rtc stream (port codecLine/noteOf app.js:101-124).
+  const rx = (stream?.producers?.[0]?.receivers || []).find(r => r.codec?.codec_type === 'video');
+  const c = rx?.codec;
+  const codecLine = c
+    ? nice(c.codec_name) + (c.profile && c.level ? ` ${c.profile} ${(c.level / 10).toFixed(1)}` : '')
+    : null;
+  const note = isDown ? (err ? String(err).slice(0, 42) : 'Mất kết nối')
+    : st === 'pause' ? 'ngoài vùng nhìn'
+    : [bps ? bps.toFixed(1) + ' Mbps' : null, c ? nice(c.codec_name) : null].filter(Boolean).join(' · ');
+
   return (
     <div className={'tile' + (isDown ? ' alert' : '') + (hasAlarm ? ' detect' : '')} data-tile data-rim
          style={{minHeight: 120}} onClick={() => onOpen?.(name)}>
@@ -86,7 +100,7 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
       <div className="t-top">
         <div className="t-id">
           <div className="t-name">{displayName}</div>
-          <div className="t-code" />
+          <div className="t-code">{codecLine || 'chưa có codec'}</div>
         </div>
         {hasAlarm && (
           <span className="badge t-alarm" title={'Cảnh báo: ' + (alarm.algo || '')}
@@ -103,8 +117,7 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
         <span className="t-meta">{meta || '—'}</span>
         <div className="grow" />
         <span className="t-note" style={{color: isDown ? 'var(--err2)' : 'var(--dim)'}}>
-          {isDown ? (err ? String(err).slice(0, 42) : 'Mất kết nối')
-            : st === 'pause' ? 'ngoài vùng nhìn' : '—'}
+          {note || '—'}
         </span>
       </div>
     </div>
@@ -286,6 +299,27 @@ export default function LiveView({onOpen, onSeen, unread}) {
       const cur = prev[name];
       return {...prev, [name]: {n: (cur?.n || 0) + 1, ts: ev.ts, algo: algoName(ev.algo_model, ev.algo_name) || ev.label}};
     });
+  }, []);
+
+  /* ---------- poll số đếm người mỗi 3s (port "tự hỏi box") ----------
+     /api/area trả snapshot _AREA (số mới nhất từ box push) — dự phòng khi SSE đứt.
+     SSE vẫn cập nhật tức thì; poll này chỉ đảm bảo badge luôn có số gần nhất. */
+  useEffect(() => {
+    let alive = true;
+    const pollArea = async () => {
+      try {
+        const j = await jget(BASE + 'api/area', 6000);
+        if (!alive || !j?.data) return;
+        const ac = {};
+        for (const [name, v] of Object.entries(j.data)) {
+          if (v && v.n != null) ac[name] = {n: v.n, ts: v.ts ?? Date.now() / 1000};
+        }
+        if (Object.keys(ac).length) setAreaCount(prev => ({...prev, ...ac}));
+      } catch { /* khe */ }
+    };
+    pollArea();
+    const iv = setInterval(pollArea, 3000);
+    return () => { alive = false; clearInterval(iv); };
   }, []);
 
   /* ---------- trạng thái luồng (port tileState/statusOf/isDown) ---------- */
@@ -524,6 +558,8 @@ export default function LiveView({onOpen, onSeen, unread}) {
                       name={nm}
                       displayName={camNames[nm] || nm}
                       streamUrl={wsUrl(nm)}
+                      stream={streams[nm]}
+                      bps={bps[nm]}
                       areaOn={areaOn[nm]}
                       areaCount={areaCount[nm]}
                       alarm={activeAlarm[nm]}

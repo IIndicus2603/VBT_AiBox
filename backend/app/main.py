@@ -126,4 +126,13 @@ def alarm_image(name: str):
 
 
 if os.path.isdir(_FRONTEND_DIST):
+    _INDEX = os.path.join(_FRONTEND_DIST, 'index.html')
+    # Serve index.html KHÔNG cache (Cache-Control: no-cache) để mỗi lần refresh
+    # browser luôn revalidate và tải bundle mới (Vite đổi tên file theo hash). Nếu
+    # thiếu, browser cache index.html cũ -> vẫn trỏ bundle cũ dù dist đã build mới.
+    # Route '/' đăng ký TRƯỚC mount('/') nên match path gốc; các asset /assets/* vẫn
+    # đi qua StaticFiles (có hash nên cache lâu được).
+    @app.get('/', include_in_schema=False)
+    def _serve_index():
+        return FileResponse(_INDEX, headers={'Cache-Control': 'no-cache'})
     app.mount('/', StaticFiles(directory=_FRONTEND_DIST, html=True), name='frontend')

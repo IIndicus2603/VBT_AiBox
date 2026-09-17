@@ -26,6 +26,11 @@ export function useVideoStream(src, opts = {}, onState) {
   const optsRef = useRef(opts);
   const onStateRef = useRef(onState);
   const [state, setState] = useState('idle');
+  // Tăng -> remount player hoàn toàn (WS/consumer mới). Đây là "F5 tự động": khi
+  // camera OFFLINE kéo dài, go2rtc không tự mở lại producer cho consumer cũ, chỉ có
+  // kết nối mới hoàn toàn (giống remount) mới bắt go2rtc khởi động lại nguồn RTSP.
+  const [gen, setGen] = useState(0);
+  const restartTRef = useRef(0);      // timer auto-reload (0 = chưa đặt)
 
   srcRef.current = src;
   optsRef.current = opts;
@@ -35,6 +40,18 @@ export function useVideoStream(src, opts = {}, onState) {
     const detail = {state: s, ...extra};
     setState(s);
     onStateRef.current?.(detail);
+    // Auto-reload OFFLINE kéo dài: error đầu tiên đặt timer `restartDelay` (mặc định
+    // 30s), KHÔNG reset khi vòng reconnect 15s của video-rtc lại error, để sau 30s
+    // liên tục offline thì remount. Có hình ('live') hoặc remount thì xoá timer.
+    if (s === 'error' && !restartTRef.current) {
+      restartTRef.current = setTimeout(() => {
+        restartTRef.current = 0;
+        setGen(g => g + 1);
+      }, optsRef.current.restartDelay ?? 30000);
+    } else if (s === 'live' && restartTRef.current) {
+      clearTimeout(restartTRef.current);
+      restartTRef.current = 0;
+    }
   }, []);
 
   useEffect(() => {
@@ -72,7 +89,7 @@ export function useVideoStream(src, opts = {}, onState) {
       if (performance.now() - stallAt > p.stallTimeout) stallDetect();
     };
     const stallDetect = () => {
-      if (!stallOn || p.playState !== 'live') return;
+      if (!stallOn) return;
       console.warn('[stream] stalled ' + (p.stallTimeout / 1000) + 's, reconnecting');
       if (p.ws && p.ws.readyState === WebSocket.OPEN) p.ws.close();
       stallReset();
@@ -111,7 +128,7 @@ export function useVideoStream(src, opts = {}, onState) {
     const origOnconnect = p.onconnect.bind(p);
     p.onconnect = () => {
       const ok = origOnconnect();
-      if (ok) emit('connecting');
+      if (ok) { emit('connecting'); armStall(); }
       return ok;
     };
     const origOnopen = p.onopen.bind(p);
@@ -127,6 +144,7 @@ export function useVideoStream(src, opts = {}, onState) {
     p.onclose = () => {
       const retry = origOnclose();
       if (retry && p.pcState !== WebSocket.OPEN) {
+        stallDisarm();      // WS đóng, chờ reconnect -> tạm dừng canh treo
         if (++retries > p.maxRetry) {
           emit('error', {error: 'Thử lại ' + p.maxRetry + ' lần không được'});
         } else {
@@ -161,11 +179,13 @@ export function useVideoStream(src, opts = {}, onState) {
 
     return () => {
       stallDisarm();
+      clearTimeout(restartTRef.current);
+      restartTRef.current = 0;
       p.remove();
       playerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src]);
+  }, [src, gen]);
 
   return {ref: wrapRef, state, playMode: state};
 }

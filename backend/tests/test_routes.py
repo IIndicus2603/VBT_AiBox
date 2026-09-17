@@ -43,6 +43,16 @@ def test_conn_get_code_zero():
         assert body['data']['host']
 
 
+def test_conn_test_mock_returns_device():
+    """In MOCK_DATA, /api/conn/test returns fake device info (box name for header)."""
+    with TestClient(app) as c:
+        r = c.post('/api/conn/test')
+        assert r.status_code == 200
+        body = r.json()
+        assert body['code'] == 0
+        assert body['data']['device_name']
+
+
 def test_alarms_post_returns_list():
     """POST /api/alarms returns a list (from mock in MOCK_DATA), even if empty."""
     with TestClient(app) as c:

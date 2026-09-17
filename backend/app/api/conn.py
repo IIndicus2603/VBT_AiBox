@@ -175,6 +175,8 @@ async def conn_tgsave(request: Request):
 
 @router.post('/conn/test')
 async def conn_test():
+    if mock.mock_enabled():
+        return {'code': 0, 'msg': 'ok', 'data': mock.mock_conn_test()}
     try:
         r = box.call('/api/v2/device/get')
     except Exception as e:

@@ -113,6 +113,12 @@ def mock_conn_info():
             'tg_setup_n': 0, 'tg_chats': []}
 
 
+def mock_conn_test():
+    """Fake /api/conn/test body — device info the header shows as the box name.
+    Matches what box /api/v2/device/get returns (device_name/model/device_sn)."""
+    return {'device_name': 'UNV SmartBox', 'model': 'IPC322', 'device_sn': 'MOCK-DEMO'}
+
+
 async def mock_events():
     """Async generator yielding fake SSE event dicts every ~5s so the live
     timeline keeps updating in offline mode. Cycles through cameras and algos."""

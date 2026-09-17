@@ -26,7 +26,7 @@ from app import config
 from app import mock
 from app.alarm.normalize import _norm_alarm
 from app.alarm.publish import _subs, _subs_lock
-from app.alarm.receiver import handle_alarm
+from app.alarm.receiver import handle_alarm, _AREA
 from app.box.client import box
 from app.db import repos
 
@@ -45,6 +45,17 @@ async def alarm_ingress(request: Request, slot: int = None, platform: int = None
     _sl = slot if slot is not None else platform
     handle_alarm(body, ctype, _sl)
     return {'code': 200, 'msg': 'ok'}
+
+
+@router.get('/api/area')
+async def area_snapshot():
+    """Số đếm người real-time mới nhất (port _AREA receiver.py) — để FE poll mỗi 3s,
+    không phụ thuộc SSE push. Trả {stream: {n, ts, name}} (stream = 'ch<channel_id>')."""
+    if mock.mock_enabled():
+        return {'code': 0, 'data': {}}
+    return {'code': 0, 'data': {
+        f'ch{cid}': {'n': v.get('count'), 'ts': v.get('ts'), 'name': v.get('name')}
+        for cid, v in _AREA.items()}}
 
 
 @router.post('/api/alarms')

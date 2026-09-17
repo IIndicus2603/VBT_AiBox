@@ -1245,9 +1245,9 @@ a{color:#e6dbba}a:hover{color:#f4ecca}
 /* design 854: cham trang thai XANH 6px + quanh sang + nhap nhay aPulse ben trai chu LIVE;
    textContent cua app.js ghi de noi dung -> dung ::before (song sot moi lan paintTile).
    Chỉ trạng thái LIVE có chấm (design không có chấm cho off/wait; .t-area là đếm người). */
-.t-top .badge:not(.t-area):not(.off):not(.wait)::before{content:"";flex:none;width:6px;height:6px;
+.t-top .badge:not(.t-area):not(.t-alarm):not(.off):not(.wait)::before{content:"";flex:none;width:6px;height:6px;
   border-radius:50%;background:#30d158;box-shadow:0 0 8px #30d158;animation:aPulse 2s infinite}
-.t-top .badge:not(.t-area):not(.off):not(.wait) .t{animation:aPulse 2s infinite}
+.t-top .badge:not(.t-area):not(.t-alarm):not(.off):not(.wait) .t{animation:aPulse 2s infinite}
 .badge.wait{color:#ff9f0a;
   background:linear-gradient(168deg,rgba(255,159,10,.30) 0%,rgba(255,159,10,.12) 55%,rgba(230,150,0,.20) 100%)}
 .badge.off{color:#ff453a;
@@ -1886,8 +1886,7 @@ nav[data-dock] .badge{position:absolute;top:-6px;left:calc(100% - 9px);z-index:2
 .h-online{flex:none;font:500 12px/1 var(--b);color:#30d158;white-space:nowrap}
 .h-clock{flex:none;min-width:58px;text-align:right;font:500 13.5px/1 var(--m);
   font-variant-numeric:tabular-nums;color:#f5f5f7;white-space:nowrap}
-.h-box{min-width:0;font:500 11.5px/1 var(--b);color:#30d158;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
+.h-box{min-width:0;font:500 11.5px/1 var(--b);color:#30d158;white-space:nowrap}
 .h-div{flex:none;width:1px;height:12px;background:rgba(255,255,255,.18)}
 .h-vr{flex:none;width:1px;height:26px;background:rgba(255,255,255,.12)}
 

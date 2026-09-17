@@ -116,7 +116,7 @@ const SRC_FMASK = [['0', 'All'], ['1', 'Yes'], ['2', 'No']];
 // ---- Helpers.
 const dtLocal = d => {
   const p = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
 const srcPic = x => libImg(x.big_picture_url || x.small_picture_url);
 const libImg = p => {
@@ -364,9 +364,16 @@ export default function SearchView() {
       try {
         const aj = await jget(BASE + 'api/algo/all', 8000);
         if (!alive) return;
-        const sup = ((aj.data || {}).supported || [])
+        // Chỉ các thuật toán ĐANG BẬT (loaded), không phải toàn bộ 93 supported —
+        // như box: dropdown tìm kiếm chỉ liệt kê algo đang hoạt động.
+        const sup = ((aj.data || {}).loaded || [])
           .filter(a => a !== 'AreaRuleData')
-          .map(a => ({id: a, name: algoName(a) || a}));
+          .map(a => {
+            const vi = algoName(a);
+            // Nhãn như box: "EnterArea - Vào vùng". Bỏ lặp khi không có tên VN.
+            const label = vi && vi !== a ? `${a} - ${vi}` : a;
+            return {id: a, name: label};
+          });
         setAlgos(sup);
       } catch (e) {
         if (alive) setAlgos([]);
@@ -375,12 +382,14 @@ export default function SearchView() {
     return () => { alive = false; };
   }, []);
 
-  // mặc định: 24h gần nhất khi có camera
+  // mặc định: full ngày hôm nay (từ 00:00 → bây giờ) khi có camera — như box
   useEffect(() => {
     if (cams.length) {
+      // Mặc định: cả ngày hôm nay 00:00:00 → 23:59:59 (không theo giờ hiện tại).
       const now = new Date();
-      setToVal(dtLocal(now));
-      setFromVal(dtLocal(new Date(now.getTime() - 24 * 3600 * 1000)));
+      const y = now.getFullYear(), mo = now.getMonth(), d = now.getDate();
+      setToVal(dtLocal(new Date(y, mo, d, 23, 59, 59)));
+      setFromVal(dtLocal(new Date(y, mo, d, 0, 0, 0)));
     }
   }, [cams.length]);
 
@@ -411,25 +420,44 @@ export default function SearchView() {
             handle_status, match_type, ...(behQ || {}), ...(faceQ || {})};
   };
 
-  // adapter mock: /api/alarms -> row dạng search (nếu box không trả search)
-  const mockFallbackRows = async () => {
+  // adapter mock: /api/alarms -> row dạng search (nếu box không trả search).
+  // Lọc bỏ alarm rác (keepalive / thiếu event_id, channel_id) để khỏi lòi
+  // "mock-N" / "CHnull" ra lưới — những dòng ấy là alarm type 6 không có dữ liệu.
+  // Tôn trọng query (thời gian + camera + phân trang) như box search thật, để
+  // fallback không phải lúc nào cũng trả 10 alarm mới nhất. Trả {list, total}.
+  const mockFallbackRows = async q => {
     try {
       const j = await jget(BASE + 'api/alarms', 6000);
-      const list = (j.data || []).slice(0, pagesize);
-      return list.map((a, i) => ({
-        alarm_id: a.event_id || ('mock-' + i),
+      const st = q?.start_time || 0;
+      const et = q?.end_time || Infinity;
+      const chs = (q?.channel_id || []).map(Number);
+      const pg = Math.max(1, Number(q?.page) || 1);
+      const ps = Number(q?.pagesize) || pagesize;
+      const inRange = (j.data || [])
+        .filter(a => a.event_id != null && String(a.event_id) !== ''
+                     && a.channel_id != null
+                     && (a.ts || 0) >= st && (a.ts || 0) <= et
+                     && (!chs.length || chs.includes(Number(a.channel_id))))
+        .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+      const total = inRange.length;
+      const list = inRange.slice((pg - 1) * ps, pg * ps);
+      return {
+        total,
+        list: list.map(a => ({
+        alarm_id: a.event_id,
         status: 0,
         algo_model: a.algo_model,
         channel_id: a.channel_id,
         channel_name: a.channel_name || ('CH' + a.channel_id),
         capture_time: a.ts,
         video_url: a.video_url || '',
-        big_picture_url: null,
+        big_picture_url: (a.images || [])[0] || null,
         small_picture_url: null,
         object_list: (a.capture_info || []).map(ci => ({object_type: ci.object_type === 'person' ? 1 : 0})),
-      }));
+        })),
+      };
     } catch {
-      return [];
+      return {total: 0, list: []};
     }
   };
 
@@ -445,17 +473,21 @@ export default function SearchView() {
       let list = (data || {}).list || [];
       if (!data || typeof data.total === 'undefined') {
         // search không phản hồi theo schema (mock) — rơi về /api/alarms
-        list = await mockFallbackRows();
-        setTotal(list.length);
+        const fb = await mockFallbackRows(q);
+        list = fb.list;
+        setTotal(fb.total);
       } else {
         setTotal((data.total) || 0);
       }
+      // Không tin thứ tự box trả về — luôn sắp mới nhất trước theo capture_time
+      // (box có thể trả lẫn lộn khi mạng không ổn định / có gap thời gian).
+      list = [...list].sort((a, b) => (b.capture_time || 0) - (a.capture_time || 0));
       setRows(list);
     } catch (e) {
-      const fb = await mockFallbackRows();
-      setRows(fb);
-      setTotal(fb.length);
-      if (!fb.length) toastShow('LỖI', 'Tìm kiếm thất bại: ' + (e.message || ''));
+      const fb = await mockFallbackRows(q);
+      setRows(fb.list);
+      setTotal(fb.total);
+      if (!fb.list.length) toastShow('LỖI', 'Tìm kiếm thất bại: ' + (e.message || ''));
     } finally {
       setSearching(false);
     }
@@ -466,10 +498,13 @@ export default function SearchView() {
   useEffect(() => {
     if (didInit.current) return;
     if (!cams.length) return;
+    // Chờ from/to mặc định (00:00:00 → 23:59:59) được set rồi mới tìm — nếu tìm
+    // ngay, state chưa cập nhật nên query rơi về "1h gần nhất" thay vì cả ngày.
+    if (!fromVal || !toVal) return;
     didInit.current = true;
     loadSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cams.length]);
+  }, [cams.length, fromVal, toVal]);
 
   // Đổi tab: KHÔNG gọi loadSearch ngay tại onClick. loadSearch là useCallback theo
   // [tab], gọi liền sau setTab() sẽ chạy closure của render CŨ -> đánh vào endpoint
@@ -646,22 +681,33 @@ export default function SearchView() {
               <SrcDrop id="cams" opts={cams.map(c => ({value: String(c.id), label: c.name}))}
                 openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 150}}>
-              <span className="view-sub">Từ</span>
-              <input type="datetime-local" id="searchFrom" value={fromVal} onChange={e => setFromVal(e.target.value)}
-                style={{height: 38, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 8px'}} />
+            {/* behavior-only: Loại alarm + Đối tượng — nằm chung hàng, sau Camera */}
+            <div style={{display: tab === 'behavior' ? 'flex' : 'none', flexDirection: 'column', gap: 5}}>
+              <span className="view-sub">Loại alarm</span>
+              <SrcDrop id="algos" opts={algos.map(a => ({value: a.id, label: a.name}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 150}}>
-              <span className="view-sub">Đến</span>
-              <input type="datetime-local" id="searchTo" value={toVal} onChange={e => setToVal(e.target.value)}
-                style={{height: 38, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 8px'}} />
+            <div style={{display: tab === 'behavior' ? 'flex' : 'none', flexDirection: 'column', gap: 5}}>
+              <span className="view-sub">Đối tượng</span>
+              <SrcDrop id="obj" opts={SRC_FOBJ.map(([v, l]) => ({value: String(v), label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 90}}>
               <span className="view-sub">Kết quả xử lý</span>
               <SrcDrop id="st" opts={SRC_STATUS.map(([v, l]) => ({value: v, label: l}))}
                 openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 130}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 5, flex: '0 1 160px', minWidth: 120}}>
+              <span className="view-sub">Từ</span>
+              <input type="datetime-local" id="searchFrom" step="1" value={fromVal} onChange={e => setFromVal(e.target.value)}
+                style={{height: 38, width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 8px'}} />
+            </div>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 5, flex: '0 1 160px', minWidth: 120}}>
+              <span className="view-sub">Đến</span>
+              <input type="datetime-local" id="searchTo" step="1" value={toVal} onChange={e => setToVal(e.target.value)}
+                style={{height: 38, width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 8px'}} />
+            </div>
+            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 80}}>
               <span className="view-sub">Match</span>
               <SrcDrop id="match" single opts={[['999', 'All'], ['1', 'Match'], ['2', 'Not Match']].map(([v, l]) => ({value: v, label: l}))}
                 openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
@@ -709,46 +755,32 @@ export default function SearchView() {
             </div>
           </div>
 
-          {/* behavior-only: Loại alarm + Đối tượng */}
-          <div id="srcBehFilters" style={{display: tab === 'behavior' ? 'flex' : 'none', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginTop: 12}}>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Loại alarm</span>
-              <SrcDrop id="algos" opts={algos.map(a => ({value: a.id, label: a.name}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
+          {/* Toolbar — dòng 2 bên trong panel (Select/Delete/Export/Grid/List) */}
+          <div className="src-toolbar" style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap'}}>
+            <button data-glassbtn id="srcSelPage" style={{height: 32, padding: '0 13px', borderRadius: 11}} onClick={selectThisPage}>Select This Page</button>
+            <button data-glassbtn id="srcDelete" style={{height: 32, padding: '0 13px', borderRadius: 11}} title="Xóa alarm đã chọn"
+              disabled={deleting} onClick={onDelete}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
+                <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
+              </svg>
+              <span>Delete</span>
+            </button>
+            <button data-glassbtn id="srcExport" style={{height: 32, padding: '0 13px', borderRadius: 11}} title="Export dữ liệu qua box" onClick={onExport}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              <span>Export</span>
+            </button>
+            <span className="tb-div" />
+            <div data-glass data-seg className="seg" id="srcView" style={{flex: 'none', padding: 3, borderRadius: 12}}>
+              <button data-src-view="grid" className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}>Grid</button>
+              <button data-src-view="list" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>List</button>
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Đối tượng</span>
-              <SrcDrop id="obj" opts={SRC_FOBJ.map(([v, l]) => ({value: String(v), label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
+            <div className="grow" />
+            <span className="view-sub" id="srcSelHint" hidden={sel.size === 0}>
+              Đã chọn <b id="srcSelN">{sel.size}</b> mục
+            </span>
           </div>
-        </div>
-
-        {/* Toolbar */}
-        <div className="src-toolbar" style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap'}}>
-          <button data-glassbtn id="srcSelPage" style={{height: 32, padding: '0 13px', borderRadius: 11}} onClick={selectThisPage}>Select This Page</button>
-          <button data-glassbtn id="srcDelete" style={{height: 32, padding: '0 13px', borderRadius: 11}} title="Xóa alarm đã chọn"
-            disabled={deleting} onClick={onDelete}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
-              <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
-            </svg>
-            <span>Delete</span>
-          </button>
-          <button data-glassbtn id="srcExport" style={{height: 32, padding: '0 13px', borderRadius: 11}} title="Export dữ liệu qua box" onClick={onExport}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-            </svg>
-            <span>Export</span>
-          </button>
-          <span className="tb-div" />
-          <div data-glass data-seg className="seg" id="srcView" style={{flex: 'none', padding: 3, borderRadius: 12}}>
-            <button data-src-view="grid" className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}>Grid</button>
-            <button data-src-view="list" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>List</button>
-          </div>
-          <div className="grow" />
-          <span className="view-sub" id="srcSelHint" hidden={sel.size === 0}>
-            Đã chọn <b id="srcSelN">{sel.size}</b> mục
-          </span>
         </div>
 
         {/* Lưới kết quả */}
@@ -794,17 +826,16 @@ export default function SearchView() {
                 })}
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Pager */}
-        <div className="pager" id="searchPager" hidden={pages <= 1} style={{justifyContent: 'center', paddingTop: 12}}>
-          <div className="mid">
-            <button className="pg" data-pgctrl data-pg-dir id="searchPgPrev" title="Trang trước" aria-label="Trang trước"
-              onClick={() => { if (curPage > 1) { setPage(curPage - 1); loadSearch({...qRef.current, page: curPage - 1}); } }}>‹</button>
-            <span className="view-sub" id="searchPgInfo">{rows.length ? `${total} alarm · trang ${curPage}/${pages}` : `0 / ${total} · trang ${curPage}/${pages}`}</span>
-            <button className="pg" data-pgctrl data-pg-dir id="searchPgNext" title="Trang sau" aria-label="Trang sau"
-              onClick={() => { if (curPage < pages) { setPage(curPage + 1); loadSearch({...qRef.current, page: curPage + 1}); } }}>›</button>
+            {/* Pager — cuối panel thẻ kết quả */}
+            <div className="pager" id="searchPager" hidden={pages <= 1} style={{justifyContent: 'center', paddingTop: 12}}>
+              <div className="mid">
+                <button className="pg" data-pgctrl data-pg-dir id="searchPgPrev" title="Trang trước" aria-label="Trang trước"
+                  onClick={() => { if (curPage > 1) { setPage(curPage - 1); loadSearch({...qRef.current, page: curPage - 1}); } }}>‹</button>
+                <span className="view-sub" id="searchPgInfo">{rows.length ? `${total} alarm · trang ${curPage}/${pages}` : `0 / ${total} · trang ${curPage}/${pages}`}</span>
+                <button className="pg" data-pgctrl data-pg-dir id="searchPgNext" title="Trang sau" aria-label="Trang sau"
+                  onClick={() => { if (curPage < pages) { setPage(curPage + 1); loadSearch({...qRef.current, page: curPage + 1}); } }}>›</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

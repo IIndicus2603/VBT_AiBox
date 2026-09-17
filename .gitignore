@@ -18,6 +18,7 @@ aibox.conf.json
 go2rtc.log
 tg_*.json
 tg_*.jsonl
+*.log
 
 # Editor / OS
 .DS_Store

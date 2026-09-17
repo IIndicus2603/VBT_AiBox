@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {mask, fixPct, nice} from '../api/client.js';
+import {mask, fixPct, nice, G} from '../api/client.js';
 
 /**
  * CamView — port of index.html:633-673 (section #v-cam) + the camera table,
@@ -29,14 +29,16 @@ const cnPost = async (path, body) => {
 };
 
 // test URL qua go2rtc (chỉ probe: tạo stream tạm rồi xoá) — port testUrl().
+// go2rtc API nằm ở :1984 (G), KHÔNG phải đường tương đối /api/streams — đường tương đối
+// rơi vào backend :8090 (không có route /api/streams -> 405), làm "Kiểm tra kết nối" luôn fail.
 const testUrl = async src => {
   const tmp = '_probe_' + Date.now();
   try {
-    const p = await fetch('/api/streams?name=' + encodeURIComponent(tmp) +
+    const p = await fetch(G + 'api/streams?name=' + encodeURIComponent(tmp) +
       '&src=' + encodeURIComponent(src), {method: 'PUT'});
     if (!p.ok) return {err: (await p.text()) || 'PUT ' + p.status};
     await new Promise(r => setTimeout(r, 1800));
-    const j = await fetch('/api/streams').then(r => r.json());
+    const j = await fetch(G + 'api/streams').then(r => r.json());
     const o = j[tmp] || {};
     const pr = o.producers?.[0];
     if (!pr) return {err: 'go2rtc không mở được luồng'};
@@ -47,7 +49,7 @@ const testUrl = async src => {
   } catch (e) {
     return {err: e.message};
   } finally {
-    fetch('/api/streams?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
+    fetch(G + 'api/streams?src=' + encodeURIComponent(tmp), {method: 'DELETE'}).catch(() => {});
   }
 };
 
@@ -86,6 +88,9 @@ export default function CamView({onOpen, onAi}) {
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [edit, setEdit] = useState(null);      // đối tượng camera đang sửa
+  const [streams, setStreams] = useState({});  // go2rtc /api/streams (c-url, port S.api)
+  const [bps, setBps] = useState({});          // stream -> Mbps (c-lat, port S.bps ui.js:532)
+  const [last, setLast] = useState({});        // stream -> {bytes, t} cho delta bitrate
 
   /* -------- tải danh sách camera + công suất -------- */
   const load = async () => {
@@ -104,6 +109,36 @@ export default function CamView({onOpen, onAi}) {
       setCamErr('Không đọc được /api/cameras: ' + e.message);
     }
   };
+
+  // Poll go2rtc :1984 mỗi 3s: c-url (URL thật từ stream) + c-lat (bitrate delta bytes,
+  // port pollStreams app.js:77-82 + latOf ui.js:532). URL/bitrate chỉ có khi có receiver
+  // đang xem (giống bản gốc) — không xem thì c-url '—', c-lat '—'.
+  const lastRef = useRef(last);
+  lastRef.current = last;
+  const bpsRef = useRef(bps);
+  bpsRef.current = bps;
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const j = await fetch(G + 'api/streams', {signal: AbortSignal.timeout(6000)}).then(r => r.json());
+        const t = performance.now();
+        const nb = {...bpsRef.current}, nl = {...lastRef.current};
+        for (const [name, o] of Object.entries(j)) {
+          const rx = (o?.producers?.[0]?.receivers || []).filter(r => r.codec?.codec_type === 'video');
+          const bytes = rx.reduce((s, r) => s + (r.bytes || 0), 0);
+          const p = nl[name];
+          if (p && bytes >= p.bytes && t > p.t) nb[name] = (bytes - p.bytes) * 8 / (t - p.t) / 1000;
+          nl[name] = {bytes, t};
+        }
+        for (const name of Object.keys(bpsRef.current)) if (!(name in j)) delete nb[name];
+        setBps(nb); setLast(nl); setStreams(j);
+      } catch { /* go2rtc im lặng -> giữ cũ */ }
+    };
+    poll();
+    const iv = setInterval(poll, 3000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
@@ -170,7 +205,7 @@ export default function CamView({onOpen, onAi}) {
     }
     const cid = (j.data || {}).channel_id;
     const stream = cid != null ? 'ch' + cid : null;
-    if (stream) fetch('/api/streams?name=' + encodeURIComponent(stream) +
+    if (stream) fetch(G + 'api/streams?name=' + encodeURIComponent(stream) +
       '&src=' + encodeURIComponent(srcOf()), {method: 'PUT'}).catch(() => {});
     setShowAdd(false);
     await load();
@@ -220,7 +255,7 @@ export default function CamView({onOpen, onAi}) {
     finally { setEBusy(false); setEHint(hint); }
     if (j.code !== 0) return alert('Box từ chối: ' + (j.msg || 'code ' + j.code));
     setShowEdit(false);
-    fetch('/api/streams?name=' + encodeURIComponent(eForm.stream) +
+    fetch(G + 'api/streams?name=' + encodeURIComponent(eForm.stream) +
       '&src=' + encodeURIComponent(fixPct(rtsp)), {method: 'PUT'}).catch(() => {});
     await load();
   };
@@ -232,7 +267,7 @@ export default function CamView({onOpen, onAi}) {
     if (!window.confirm('Xoá camera "' + name + '" khỏi box?')) return;
     const r = await cnPost('channel/delete', {channel_id_list: [cid]});
     if (r.code !== 0) return alert(r.msg || 'Lỗi ' + r.code);
-    fetch('/api/streams?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
+    fetch(G + 'api/streams?src=' + encodeURIComponent(name), {method: 'DELETE'}).catch(() => {});
     await load();
   };
 
@@ -257,6 +292,11 @@ export default function CamView({onOpen, onAi}) {
     return cams.map(c => {
       const nm = c.stream;
       const algos = c.algos || [];
+      // URL thật từ go2rtc stream (che mật khẩu) — port S.api ui.js:594.
+      const url = mask((streams[nm]?.producers || [])[0]?.url || '—');
+      // Độ trễ = bitrate Mbps (port latOf ui.js:532): chỉ có khi có receiver đang xem,
+      // không có phiên xem thì '—'.
+      const lat = bps[nm] != null ? bps[nm].toFixed(1) + ' Mbps' : '—';
       return (
         <div className="trow" key={nm} onClick={() => onOpen && onOpen(nm)}>
           <span className="c-id">{nm}</span>
@@ -266,8 +306,8 @@ export default function CamView({onOpen, onAi}) {
             <div className="c-algos">{algos.length ? algos.length + ' thuật toán AI' : 'chưa bật AI'}</div>
           </div>
           <span className="c-zone">{c.name || '—'}</span>
-          <span className="c-url">{'—'}</span>
-          <span className="c-lat">{'—'}</span>
+          <span className="c-url">{url}</span>
+          <span className="c-lat">{lat}</span>
           <span className={'c-st' + (c.status === 1 ? '' : ' off')}>
             <span className="dot" /><span className="s">{c.status === 1 ? 'ONLINE' : 'OFFLINE'}</span>
           </span>

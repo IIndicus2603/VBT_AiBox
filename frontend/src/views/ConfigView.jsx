@@ -262,9 +262,11 @@ export default function ConfigView() {
       const j = await postCfg('api/conn/test');
       if (j.code !== 0) return cnState('Lỗi ' + j.code + ': ' + (j.msg || ''), 'var(--err2)');
       const d = j.data || {};
-      const boxTxt = 'OK · ' + (d.device_name || d.model || '') + ' · SN ' + (d.device_sn || '—');
+      const boxTxt = 'OK · ' + (d.device_name || d.model || '') + ' · SN '
+        + (d.device_sn || d.serial_number || '—');
       try {
-        const k = await postCfg('api/conn/docking/info');
+        // docking/info là route GET (chỉ đọc), postCfg dùng POST -> 405, slots rỗng.
+        const k = await (await fetch(BASE + 'api/conn/docking/info')).json();
         const slots = (k.data || {}).slots || [];
         const who = s => (s.enabled ? s.owner : 'trống');
         const txt = slots.map(s => `P${s.slot}: ${who(s)}`).join(' · ');
