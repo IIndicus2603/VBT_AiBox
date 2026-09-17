@@ -1,0 +1,142 @@
+{
+ "1": {
+  "code": 0,
+  "data": {
+   "smart_list": [],
+   "person_control_info": {
+    "alarm_threshold": 80,
+    "control_type": 1,
+    "enable": 0,
+    "person_lib_id": [],
+    "output": [
+     {
+      "ID": 1,
+      "Enable": 0
+     },
+     {
+      "ID": 2,
+      "Enable": 0
+     },
+     {
+      "ID": 3,
+      "Enable": 0
+     },
+     {
+      "ID": 4,
+      "Enable": 0
+     }
+    ],
+    "sound_linkage": {
+     "enable": 0,
+     "warn_cnt": 1,
+     "volume": 8,
+     "ipc_enable": 0,
+     "ipc_warn_cnt": 1
+    },
+    "email_linkage": [
+     {
+      "enable": 0,
+      "id": 1,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 2,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 3,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 4,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 5,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 6,
+      "address": ""
+     }
+    ]
+   }
+  },
+  "enable": null
+ },
+ "9": {
+  "code": 0,
+  "data": {
+   "smart_list": [],
+   "person_control_info": {
+    "alarm_threshold": 80,
+    "control_type": 1,
+    "enable": 0,
+    "person_lib_id": [],
+    "output": [
+     {
+      "ID": 1,
+      "Enable": 0
+     },
+     {
+      "ID": 2,
+      "Enable": 0
+     },
+     {
+      "ID": 3,
+      "Enable": 0
+     },
+     {
+      "ID": 4,
+      "Enable": 0
+     }
+    ],
+    "sound_linkage": {
+     "enable": 0,
+     "warn_cnt": 1,
+     "volume": 8,
+     "ipc_enable": 0,
+     "ipc_warn_cnt": 1
+    },
+    "email_linkage": [
+     {
+      "enable": 0,
+      "id": 1,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 2,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 3,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 4,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 5,
+      "address": ""
+     },
+     {
+      "enable": 0,
+      "id": 6,
+      "address": ""
+     }
+    ]
+   }
+  },
+  "enable": null
+ }
+}

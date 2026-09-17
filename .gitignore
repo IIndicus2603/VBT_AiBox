@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Node / React
+node_modules/
+dist/
+build/
+*.local
+
+# Runtime data (config, alarms, logs) — secrets live here
+alarms/
+aibox.conf.json
+go2rtc.log
+tg_*.json
+tg_*.jsonl
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

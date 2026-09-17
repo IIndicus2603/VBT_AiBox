@@ -1,0 +1,38 @@
+api:
+  # Mở LAN: app Electron ở máy khác lấy hình trực tiếp từ đây (WS + WebRTC).
+  # KHÔNG đặt username/password: trình duyệt không gửi được credential trong
+  # WebSocket handshake -> bật auth là mọi khung hình chết (đã đo: LAN WS 401).
+  listen: ":1984"
+  static_dir: "ui"           # UI của mình, thay web UI mặc định của go2rtc
+  origin: "*"                # cho phép mở UI qua proxy/origin khác
+
+streams:
+  # UNV — mật khẩu UNV123456%25 ('%' phải viết thành %25)
+
+  # Imou — substream (subtype=1) vì mainstream là H265 browser không phát được
+
+  # Dahua .180/.181: HEVC cả main lẫn sub -> phải đổi encode sang H264 trong web camera
+  # Hikvision .75: không tới được (ping fail, mọi cổng đóng)
+  ch2:
+    - rtsp://admin:UNV123456%25@192.168.21.179:554/ch01
+    - onvif://admin:UNV123456%25@192.168.21.179
+  ch3:
+    - rtsp://admin:Dahua123456%25@192.168.21.180:554/cam/realmonitor?channel=1&subtype=0
+  ch4:
+    - rtsp://admin:Dahua123456%25@192.168.21.181:554/cam/realmonitor?channel=1&subtype=0
+  ch5:
+    - rtsp://admin:Imou123456%25@192.168.21.182:554/cam/realmonitor?channel=1&subtype=0
+    - onvif://admin:Imou123456%25@192.168.21.182
+  ch6:
+    - rtsp://admin:Imou123456%25@192.168.21.183:554/cam/realmonitor?channel=1&subtype=0
+    - onvif://admin:Imou123456%25@192.168.21.183
+  ch8:
+    - rtsp://admin:UNV123456%25@192.168.21.186:554/ch01
+    - onvif://admin:UNV123456%25@192.168.21.186
+  # .184 KHONG phai Imou du dung day IP: web UI tra index.htm?clientIpAddr= kieu UNV,
+  # va chi DESCRIBE OK voi mat khau UNV + path /ch01 (H264). Path Dahua/Imou
+  # (/cam/realmonitor) tra 200 cho OPTIONS nhung timeout o DESCRIBE -> tuong la mat mang.
+  ch7:
+    - rtsp://admin:UNV123456%25@192.168.21.184:554/channel=1&subtype=0
+  ch1:
+    - rtsp://admin:123456a$@192.168.21.178:554/ch01
