@@ -362,117 +362,110 @@ export default function LiveView({onOpen, onSeen, unread}) {
     <section className="view" id="v-live">
       <div className="view-wrap">
         <div className="live-split">
-          {/* Bar tiêu đề + toolbar */}
-          <div className="bar" style={{position: 'relative', gap: 14, flexWrap: 'wrap', marginBottom: 4}}>
-            <span className="view-h" data-i18n="tLive">Camera trực tiếp</span>
-            <div className="grow" />
-
-            <div className="tb cam-tb">
-              {/* Pager */}
-              <span id="pager" hidden={pages < 2}
-                    style={{display: 'flex', alignItems: 'center', gap: 2}}>
-                <button id="pgPrev" data-pgctrl data-pg-dir title="Trang trước"
-                        className={page === 0 ? 'dis' : ''}
-                        onClick={() => setPage(p => Math.max(0, p - 1))}>‹</button>
-                <span id="pgNums" style={{display: 'flex', alignItems: 'center', gap: 2}}>
-                  {pages > 1 && Array.from({length: pages}, (_, i) => (
-                    <button key={i} className={'pg' + (i === page ? ' on' : '')}
-                            onClick={() => setPage(i)}>{i + 1}</button>
-                  ))}
-                </span>
-                <button id="pgNext" data-pgctrl data-pg-dir title="Trang sau"
-                        className={page >= pages - 1 ? 'dis' : ''}
-                        onClick={() => setPage(p => Math.min(pages - 1, p + 1))}>›</button>
-                <span className="tb-div" />
-              </span>
-
-              {/* Bố cục lưới */}
-              <div className="drop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
-                <button data-glassbtn id="layoutBtn"
-                        style={{height: 27, padding: '0 9px', borderRadius: 10,
-                                font: '600 11.5px/1 var(--b)',
-                                borderColor: layoutOpen ? 'var(--gold3)' : ''}}
-                        onClick={e => { e.stopPropagation(); setLayoutOpen(o => !o); }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-                       strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11}}>
-                    <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                    <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                    <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                    <rect x="14" y="14" width="7" height="7" rx="1.5" />
-                  </svg>
-                  <span id="layoutLabel">{LAYOUTS.find(([c]) => c === cols)?.[1] || '3×3'}</span>
-                </button>
-                <div className="menu" id="layoutMenu" data-glass
-                     hidden={!layoutOpen}
-                     style={{top: 'calc(100% + 8px)', right: 0, width: 150, borderRadius: 16}}>
-                  <div id="layoutList">
-                    {LAYOUTS.map(([c, l]) => (
-                      <div key={c} className={'mrow' + (c === cols ? ' on' : '')}
-                           onClick={e => { e.stopPropagation(); setCols(c); setPage(0); setLayoutOpen(false); }}>
-                        <span className="l">{l}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <span className="tb-div" />
-
-              {/* Lọc */}
-              <div className="drop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
-                <button data-goldbtn id="fBtn"
-                        style={{height: 27, width: 27, padding: 0, borderRadius: 10,
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                borderColor: fOpen ? 'var(--gold3)' : ''}}
-                        onClick={e => { e.stopPropagation(); setFOpen(o => !o); }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-                       strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11}}>
-                    <path d="M4 6h16M7 12h10M10 18h4" />
-                  </svg>
-                </button>
-                <div className="menu" id="fMenu" data-glass hidden={!fOpen}
-                     style={{top: 'calc(100% + 8px)', right: 0, width: 270, borderRadius: 16}}>
-                  <div id="fList">
-                    {FILTERS.map(f => {
-                      const n = order.filter(nm =>
-                        f.k === 'live' ? tileState(nm) === 'live' :
-                        f.k === 'down' ? isDown(nm) : true).length;
-                      return (
-                        <div key={f.k} className={'mrow' + (f.k === filter ? ' on' : '')}
-                             onClick={e => { e.stopPropagation(); setFilter(f.k); setPage(0); setFOpen(false); }}>
-                          <span className="dot" style={{background: f.dot}} />
-                          <span className="l">{f.l}</span>
-                          <span className="k">{n}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <span className="tb-div" />
-
-              {/* Làm mới */}
-              <button data-glassbtn id="camRefresh" title="Làm mới"
-                      className={refreshing ? 'spin' : ''}
-                      style={{height: 27, width: 27, padding: 0, borderRadius: 10,
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}
-                      onClick={refresh}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                     strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11}}>
-                  <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
           <div className="live-cols">
             {/* Rail trái: danh sách camera */}
             <aside className="cam-rail" data-glass>
-              <div className="rail-h">
-                <span className="hist-t">Danh sách camera</span>
-                <span className="hist-n" id="railN">{order.length} camera</span>
-                <div className="grow" />
+              <div className="rail-h" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'nowrap', gap: 6, width: '100%'}}>
+                <div style={{display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden'}}>
+                  <span className="hist-t" style={{whiteSpace: 'nowrap'}}>Danh sách camera</span>
+                  <span className="hist-n" id="railN" style={{whiteSpace: 'nowrap'}}>{order.length}</span>
+                </div>
+
+                <div className="tb cam-tb" style={{display: 'flex', alignItems: 'center', gap: 4, margin: 0, padding: 0, border: 'none', background: 'none', flex: 'none'}}>
+                  {/* Pager */}
+                  <span id="pager" hidden={pages < 2}
+                        style={{display: 'flex', alignItems: 'center', gap: 2}}>
+                    <button id="pgPrev" data-pgctrl data-pg-dir title="Trang trước"
+                            className={page === 0 ? 'dis' : ''}
+                            onClick={() => setPage(p => Math.max(0, p - 1))}>‹</button>
+                    <span id="pgNums" style={{display: 'flex', alignItems: 'center', gap: 2}}>
+                      {pages > 1 && Array.from({length: pages}, (_, i) => (
+                        <button key={i} className={'pg' + (i === page ? ' on' : '')}
+                                onClick={() => setPage(i)}>{i + 1}</button>
+                      ))}
+                    </span>
+                    <button id="pgNext" data-pgctrl data-pg-dir title="Trang sau"
+                            className={page >= pages - 1 ? 'dis' : ''}
+                            onClick={() => setPage(p => Math.min(pages - 1, p + 1))}>›</button>
+                    <span className="tb-div" />
+                  </span>
+
+                  {/* Bố cục lưới */}
+                  <div className="drop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
+                    <button data-glassbtn id="layoutBtn"
+                            style={{height: 27, padding: '0 9px', borderRadius: 10,
+                                    font: '600 11.5px/1 var(--b)',
+                                    borderColor: layoutOpen ? 'var(--gold3)' : ''}}
+                            onClick={e => { e.stopPropagation(); setLayoutOpen(o => !o); }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+                           strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11}}>
+                        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                      </svg>
+                      <span id="layoutLabel">{LAYOUTS.find(([c]) => c === cols)?.[1] || '3×3'}</span>
+                    </button>
+                    <div className="menu" id="layoutMenu" data-glass
+                         hidden={!layoutOpen}
+                         style={{top: 'calc(100% + 8px)', right: 0, width: 150, borderRadius: 16,
+                                 background: 'linear-gradient(180deg, rgba(20, 24, 32, 0.98), rgba(12, 15, 20, 0.98))',
+                                 border: '1px solid rgba(255, 255, 255, 0.18)',
+                                 boxShadow: '0 16px 34px rgba(0, 0, 0, 0.8)',
+                                 backdropFilter: 'blur(20px)',
+                                 WebkitBackdropFilter: 'blur(20px)',
+                                 zIndex: 100}}>
+                      <div id="layoutList">
+                        {LAYOUTS.map(([c, l]) => (
+                          <div key={c} className={'mrow' + (c === cols ? ' on' : '')}
+                               onClick={e => { e.stopPropagation(); setCols(c); setPage(0); setLayoutOpen(false); }}>
+                            <span className="l">{l}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <span className="tb-div" />
+
+                  {/* Lọc */}
+                  <div className="drop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
+                    <button data-goldbtn id="fBtn"
+                            style={{height: 27, width: 27, padding: 0, borderRadius: 10,
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    borderColor: fOpen ? 'var(--gold3)' : ''}}
+                            onClick={e => { e.stopPropagation(); setFOpen(o => !o); }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+                           strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11}}>
+                        <path d="M4 6h16M7 12h10M10 18h4" />
+                      </svg>
+                    </button>
+                    <div className="menu" id="fMenu" data-glass hidden={!fOpen}
+                         style={{top: 'calc(100% + 8px)', right: 0, width: 270, borderRadius: 16,
+                                 background: 'linear-gradient(180deg, rgba(20, 24, 32, 0.98), rgba(12, 15, 20, 0.98))',
+                                 border: '1px solid rgba(255, 255, 255, 0.18)',
+                                 boxShadow: '0 16px 34px rgba(0, 0, 0, 0.8)',
+                                 backdropFilter: 'blur(20px)',
+                                 WebkitBackdropFilter: 'blur(20px)',
+                                 zIndex: 100}}>
+                      <div id="fList">
+                        {FILTERS.map(f => {
+                          const n = order.filter(nm =>
+                            f.k === 'live' ? tileState(nm) === 'live' :
+                            f.k === 'down' ? isDown(nm) : true).length;
+                          return (
+                            <div key={f.k} className={'mrow' + (f.k === filter ? ' on' : '')}
+                                 onClick={e => { e.stopPropagation(); setFilter(f.k); setPage(0); setFOpen(false); }}>
+                              <span className="dot" style={{background: f.dot}} />
+                              <span className="l">{f.l}</span>
+                              <span className="k">{n}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="rail-list nosb" id="rail">
                 {order.length === 0 ? (
@@ -506,7 +499,7 @@ export default function LiveView({onOpen, onSeen, unread}) {
               </div>
             </aside>
 
-            <div className="live-main">
+            <div className="live-main" style={{display: 'flex', flexDirection: 'column'}}>
               {/* Lưới camera */}
               <div id="grid"
                    style={{flex: 1, minHeight: 0, display: 'grid', gap: 12,

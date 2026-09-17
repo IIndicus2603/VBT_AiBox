@@ -134,6 +134,7 @@ export default function App() {
 
       <Header
         view={view}
+        lang={lang}
         onGo={go}
         onLang={() => setLang(l => (l === 'vi' ? 'en' : 'vi'))}
         boxOnline={boxOnline}
