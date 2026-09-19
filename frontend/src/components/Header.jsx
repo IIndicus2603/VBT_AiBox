@@ -1,45 +1,19 @@
 import React, {useEffect, useRef, useState} from 'react';
 import Dock from './Dock.jsx';
-import {hms, BASE} from '../api/client.js';
-// logo-app.png / logo.png co nen dac (12,17,25) nung san trong file — 0% alpha,
-// nen luon lo nen den tren thanh header. Chi ban -transparent nay co alpha that.
+import {hms, BASE, API, jget} from '../api/client.js';
 import logoApp from '../assets/logo-diamond-transparent.png';
+import { useTranslation } from '../i18n/index.jsx';
 
-/**
- * Header — port index.html:27-112 + đồng hồ tick (ui.js:527-539).
- * Gồm: logo + brand, dock điều hướng, lang switch (VI/EN), trạng thái box + clock.
- */
-const VIEW_TITLES = {
-  vi: {
-    live: 'XEM TRỰC TIẾP',
-    detail: 'CHI TIẾT CAMERA',
-    log: 'NHẬT KÝ SỰ KIỆN AI',
-    lib: 'THƯ VIỆN NHẬN DIỆN',
-    search: 'TÌM KIẾM NÂNG CAO',
-    cam: 'QUẢN LÝ CAMERA',
-    ai: 'CẤU HÌNH AI',
-    cfg: 'CẤU HÌNH HỆ THỐNG',
-  },
-  en: {
-    live: 'LIVE VIEW',
-    detail: 'CAMERA DETAILS',
-    log: 'AI EVENT LOGS',
-    lib: 'RECOGNITION LIBRARY',
-    search: 'ADVANCED SEARCH',
-    cam: 'CAMERA MANAGEMENT',
-    ai: 'AI CONFIGURATION',
-    cfg: 'SYSTEM CONFIGURATION',
-  },
-};
-
-export default function Header({view, onGo, onLang, lang = 'vi', boxOnline, unread}) {
+export default function Header({view, focus, onGo, onLang, lang: propLang, boxOnline, unread, onEvent, onReadAll}) {
+  const { t, lang: ctxLang, setLang } = useTranslation();
+  const lang = ctxLang || propLang || 'vi';
   const [clock, setClock] = useState('--:--:--');
-  // Tên box hiện ở header — port checkBox() ui.js:1094. boxText = nội dung 'AI BOX …',
-  // boxColor + boxPulse theo trạng thái (xanh kết nối, vàng thiếu cấu hình, đỏ lỗi).
   const [boxText, setBoxText] = useState('AI BOX …');
   const [boxColor, setBoxColor] = useState('#30d158');
-  const [boxPulse, setBoxPulse] = useState(false);
   const boxBusy = useRef(false);
+  const [camOn, setCamOn] = useState(0);
+  const [camTot, setCamTot] = useState(0);
+  const [camNames, setCamNames] = useState({});
 
   useEffect(() => {
     const tick = () => setClock(hms(new Date()));
@@ -48,57 +22,78 @@ export default function Header({view, onGo, onLang, lang = 'vi', boxOnline, unre
     return () => clearInterval(id);
   }, []);
 
-// Port checkBox() ui.js:1094 — poll trạng thái box mỗi 30s + lúc mount.
   useEffect(() => {
-    let on = true;
-    const done = () => { boxBusy.current = false; };
-    const setBox = (txt, col, pulse) => {
-      if (!on) return;
-      setBoxText(txt); setBoxColor(col); setBoxPulse(!!pulse);
-    };
     const checkBox = async () => {
       if (boxBusy.current) return;
       boxBusy.current = true;
       try {
-        let d;
-        try {
-          const j = await (await fetch(BASE + 'api/conn',
-            {signal: AbortSignal.timeout(6000)})).json();
-          d = j.data || {};
-        } catch {
-          return setBox('AI BOX MẤT KẾT NỐI', 'var(--err2)');
-        }
-        if (!d.host) return setBox('AI BOX CHƯA CẤU HÌNH', 'var(--warn)');
-        if (!d.has_pass) return setBox('AI BOX THIẾU MẬT KHẨU', 'var(--warn)');
-        setBox('AI BOX ĐANG THỬ…', 'var(--dim)');
-        let j;
-        try {
-          const r = await fetch(BASE + 'api/conn/test', {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
-            signal: AbortSignal.timeout(20000),
-          });
-          j = await r.json();
-        } catch {
-          return setBox('AI BOX KHÔNG PHẢN HỒI', 'var(--err2)');
-        }
-        if (j.code === 0) {
-          const nm = (j.data || {}).device_name || (j.data || {}).model || d.host;
-          setBox('AI BOX ' + nm, 'var(--ok)', true);
+        const j = await jget('sys/info');
+        if (j && j.dev_name) {
+          setBoxText(j.dev_name);
+          setBoxColor('#30d158');
         } else {
-          // code 3 = sai user/pass, 1000-1004 = loi dang nhap, -1 = khong toi duoc box
-          setBox('AI BOX LỖI ' + j.code, 'var(--err2)');
+          setBoxText(t('header.boxOnline'));
+          setBoxColor('#30d158');
         }
       } catch {
-        setBox('AI BOX KHÔNG PHẢN HỒI', 'var(--err2)');
+        setBoxText(t('header.boxOffline'));
+        setBoxColor('#ff453a');
       } finally {
-        done();
+        boxBusy.current = false;
       }
     };
     checkBox();
-    const id = setInterval(checkBox, 30000);
-    return () => { on = false; clearInterval(id); };
+    const id = setInterval(checkBox, 15000);
+    return () => clearInterval(id);
+  }, [t]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      let total = 0, online = 0;
+      const nm = {};
+      try {
+        const rC = await fetch(BASE + 'api/cameras');
+        const jC = await rC.json();
+        if (jC.code === 0 && Array.isArray(jC.cameras)) {
+          total = jC.cameras.length;
+          jC.cameras.forEach(c => {
+            if (c.id && c.name) nm[c.id] = c.name;
+          });
+        }
+      } catch { /* fallback */ }
+
+      try {
+        const rS = await fetch(BASE + 'api/streams');
+        const st = await rS.json();
+        if (st && typeof st === 'object') {
+          for (let i = 1; i <= Math.max(total, 16); i++) {
+            const k = 'ch' + i;
+            if (st[k] && st[k].producers && st[k].producers.length > 0) online++;
+          }
+        }
+      } catch { online = total; }
+
+      if (alive) {
+        setCamTot(total);
+        setCamOn(online);
+        setCamNames(nm);
+      }
+    };
+    load();
+    const id = setInterval(load, 10000);
+    return () => { alive = false; clearInterval(id); };
   }, []);
-  const titles = VIEW_TITLES[lang] || VIEW_TITLES.vi;
+
+  const viewTitleKey = 'header.' + (view || 'live');
+  const viewTitle = t(viewTitleKey);
+  const currentCamName = focus ? (camNames[focus] || focus) : '—';
+
+  const handleLangToggle = () => {
+    const nextLang = lang === 'vi' ? 'en' : 'vi';
+    setLang(nextLang);
+    onLang?.(nextLang);
+  };
 
   return (
     <header data-glass
@@ -116,24 +111,50 @@ export default function Header({view, onGo, onLang, lang = 'vi', boxOnline, unre
 
         <span className="h-vr" style={{height: 20, opacity: 0.35, margin: '0 2px'}} />
 
+        {view === 'detail' && (
+          <button data-glassbtn id="back" style={{height: 32, padding: '0 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', flex: 'none'}} onClick={() => onGo?.('live')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                 strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+            <span>{t('header.allCams')}</span>
+          </button>
+        )}
+
         <span style={{
           font: '700 14px/1 var(--b)',
           letterSpacing: '0.06em',
           color: '#f5e3b5',
           whiteSpace: 'nowrap',
           textTransform: 'uppercase',
-          textShadow: '0 0 10px rgba(245,227,181,0.25)'
+          textShadow: '0 0 10px rgba(245,227,181,0.25)',
+          flex: 'none'
         }}>
-          {titles[view] || titles.log}
+          {viewTitle}
         </span>
+
+        {view === 'detail' && (
+          <>
+            <span style={{color: 'rgba(255,255,255,0.3)', font: '400 14px var(--b)', flex: 'none'}}>·</span>
+            <span style={{
+              font: '600 14px/1 var(--b)',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden'
+            }}>
+              {currentCamName}
+            </span>
+          </>
+        )}
       </div>
 
       <div style={{flex: 1}} />
 
-      <Dock view={view} onGo={onGo} unread={unread} />
+      <Dock view={view} onGo={onGo} unread={unread} onEvent={onEvent} onReadAll={onReadAll} />
 
-      <span data-langswitch data-lang={lang} title="Đổi ngôn ngữ" style={{cursor: 'pointer'}}
-            onClick={onLang}>
+      <span data-langswitch data-lang={lang} title={t('header.switchLang')} style={{cursor: 'pointer'}}
+            onClick={handleLangToggle}>
         <span data-langthumb />
         <span data-l="vi">VI</span>
         <span data-l="en">EN</span>
@@ -141,18 +162,14 @@ export default function Header({view, onGo, onLang, lang = 'vi', boxOnline, unre
 
       <span className="h-vr" />
 
-      <div className="hstat">
-        <div className="hstat-r">
-          <div style={{flex: 'none', display: 'flex', alignItems: 'center', gap: 7}}>
-            <span className="h-online" style={{color: boxOnline === false ? 'var(--err)' : undefined}}>
-              {boxOnline === false ? 'ngoại tuyến' : 'trực tuyến'}
-            </span>
-          </div>
+      <div className="hstat" style={{alignItems: 'flex-end'}}>
+        <div className="hstat-r" style={{gap: 6}}>
+          <span className="h-online">{t('header.online')}</span>
           <span className="h-div" />
-          <span className="h-clock" id="clock">{clock}</span>
+          <span className="h-clock">{clock}</span>
         </div>
-        <div style={{flex: 'none', maxWidth: '100%', display: 'inline-flex', alignItems: 'center', gap: 7, height: 22, minWidth: 0, overflow: 'hidden'}}>
-          <span className="h-box" style={{whiteSpace: 'nowrap', color: boxColor, animation: boxPulse ? 'aPulse 2s ease-in-out infinite' : 'none'}}>{boxText}</span>
+        <div className="hstat-r">
+          <span className="h-box" style={{whiteSpace: 'nowrap', color: boxColor, textTransform: 'uppercase'}}>{boxText}</span>
         </div>
       </div>
     </header>

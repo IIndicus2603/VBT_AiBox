@@ -1,6 +1,7 @@
 import React, {useState, useEffect, useRef, useCallback} from 'react';
-import {G, BASE, jget, mask, hms, pad, imgOf, videoOf} from '../api/client.js';
+import {G, BASE, jget, mask, hms, pad, imgOf, videoOf, evKey, dedupBest} from '../api/client.js';
 import {useVideoStream} from '../hooks/useVideoStream.js';
+import { useTranslation } from '../i18n/index.jsx';
 
 /* =====================================================================
  * DetailView — port of ui/index.html section #v-detail (lines 199-297)
@@ -63,7 +64,12 @@ const ALGO_VI = {
   GunmanDetection: 'Súng',
   FaceRecognitionAlarm: 'Nhận diện khuôn mặt',
 };
-const algoName = (m, fromBox) => fromBox || ALGO_VI[m] || m || '—';
+const algoName = (t, m, fromBox) => {
+  if (fromBox) return fromBox;
+  const tr = t?.('algos.' + m);
+  if (tr && tr !== ('algos.' + m)) return tr;
+  return ALGO_VI[m] || m || '—';
+};
 
 /* ---- Camera đang cảnh báo: viền nháy + số. isDetect filter giống
  *      ai.js:1412. clearAlarm tắt hiệu ứng (mọi nút "Bỏ qua"). */
@@ -79,27 +85,25 @@ const R = (k, v, cls) => (
 );
 
 /* Một phần tử trên thanh lịch sử cảnh báo (.h-item) — port paintHistBar ui.js:1193. */
-function HItem({alarm, onPlay}) {
-  const name = algoName(alarm.algo_model, alarm.algo_name);
-  const t = alarm.ts ? new Date(alarm.ts * 1000) : null;
+function HItem({alarm, onPlay, t}) {
+  const name = algoName(t, alarm.algo_model, alarm.algo_name);
+  const time = alarm.ts ? new Date(alarm.ts * 1000) : null;
   const img = imgOf(alarm);
   const clip = videoOf(alarm);
   return (
     <div className="h-item"
-         title={clip ? 'Bấm để xem lại clip' : 'Cảnh báo này không có clip'}
+         title={clip ? t('detail.histHint') : t('detail.noClip')}
          style={clip ? {cursor: 'pointer'} : undefined}
          onClick={clip ? () => onPlay?.(alarm) : undefined}>
       {img
         ? <img src={img} alt={'Ảnh phát hiện ' + name} loading="lazy"
                onError={e => {
-                 // Box lưu ảnh muộn hơn lúc đẩy alarm -> ảnh vừa tới hay 404 lần đầu.
-                 // Thử lại vài nhịp thay vì đóng đinh "ảnh lỗi" (phải đổi tab mới thấy).
                  const el = e.currentTarget;
                  const n = +(el.dataset.retry || 0);
                  if (n >= 3) {
                    const d = document.createElement('div');
                    d.className = 'h-noimg';
-                   d.textContent = 'ảnh lỗi';
+                   d.textContent = t('live.imgErr');
                    el.replaceWith(d);
                    return;
                  }
@@ -107,40 +111,46 @@ function HItem({alarm, onPlay}) {
                  const src = el.src;
                  setTimeout(() => { if (el.isConnected) el.src = src; }, 1500);
                }} />
-        : <div className="h-noimg">không ảnh</div>}
+        : <div className="h-noimg">{t('live.noImg')}</div>}
+      <div className="h-play"><span>▶</span></div>
       <div className="h-meta">
         <span className="h-algo">{name}</span>
-        <span className="h-time">{t ? hms(t) : '—'}</span>
+        <span className="h-time">{time ? hms(time) : '—'}</span>
       </div>
     </div>
   );
 }
 
 /* ==== Sidebar "Thuật toán AI" của camera đang mở (port cấu trúc thẻ #dAlgos). */
-function AlgoRow({model, onOpen}) {
-  const cat = model ? (catOf(model)) : null;
+function AlgoRow({model, onOpen, t}) {
+  const cat = model ? (catOf(t, model)) : null;
   return (
     <div className="row" style={{padding: '2px 0'}}>
-      <span className="rk">{algoName(model)}</span>
+      <span className="rk">{algoName(t, model)}</span>
       <span className="rv dim">{cat || '—'}</span>
     </div>
   );
 }
 // Nhóm loại (rút gọn từ ALGO_CAT ai.js:195-227) để cột phụ sidebar có ý nghĩa.
 const ALGO_CAT = {
-  'Chức năng chung': ['ObjectIsRecognized', 'FieldDetectorObjectsInside', 'LineDetectorCrossed', 'EnterArea', 'LeaveArea', 'AreaRuleData', 'CrowdDensityCriticalAlarm', 'LineRuleData'],
-  'Môi trường': ['FireDetection', 'FumesAlarmBegin', 'ChannelBlockageDetection', 'ObjectRemoved', 'UncoveredTrashCanDetection', 'MouseDetect', 'AccessElevatorAlarm'],
-  'Bảo hộ lao động (PPE)': ['SafetyHelmetAlarm', 'WorkClothesAlarm', 'ReflectiveClothesDetectionAlarm', 'NoMaskAlarm', 'ShirtlessDetection', 'SafetyHarnessDetection', 'NoSafetyBeltDetection'],
-  'Hành vi': ['SleepingDetectionAlarm', 'OffDutyDetectionAlarm', 'SmokingAlarm', 'TelephoningAlarm', 'PlayMobilePhoneDetection', 'FallOverAlarm', 'ClimbingDetectionAlarm', 'LongStayDetection', 'FightDetectionAlarm', 'PeopleGathering', 'FastMoving', 'StayAloneDetection', 'KnifeStickDetection', 'GunmanDetection'],
-  'Phương tiện': ['AbnormalParkingDetection', 'VehicleOverspeedDetection', 'ForkliftOverspeedDetection'],
-  'Sự kiện đường cao tốc': ['TrafficAccident', 'Pedestrian', 'Congestion', 'Construction'],
-  'Khác': [],
+  'general': ['ObjectIsRecognized', 'FieldDetectorObjectsInside', 'LineDetectorCrossed', 'EnterArea', 'LeaveArea', 'AreaRuleData', 'CrowdDensityCriticalAlarm', 'LineRuleData'],
+  'environment': ['FireDetection', 'FumesAlarmBegin', 'ChannelBlockageDetection', 'ObjectRemoved', 'UncoveredTrashCanDetection', 'MouseDetect', 'AccessElevatorAlarm'],
+  'ppe': ['SafetyHelmetAlarm', 'WorkClothesAlarm', 'ReflectiveClothesDetectionAlarm', 'NoMaskAlarm', 'ShirtlessDetection', 'SafetyHarnessDetection', 'NoSafetyBeltDetection'],
+  'behavior': ['SleepingDetectionAlarm', 'OffDutyDetectionAlarm', 'SmokingAlarm', 'TelephoningAlarm', 'PlayMobilePhoneDetection', 'FallOverAlarm', 'ClimbingDetectionAlarm', 'LongStayDetection', 'FightDetectionAlarm', 'PeopleGathering', 'FastMoving', 'StayAloneDetection', 'KnifeStickDetection', 'GunmanDetection'],
+  'vehicle': ['AbnormalParkingDetection', 'VehicleOverspeedDetection', 'ForkliftOverspeedDetection'],
+  'highway': ['TrafficAccident', 'Pedestrian', 'Congestion', 'Construction'],
+  'other': [],
 };
 const CAT_OF = {};
 Object.entries(ALGO_CAT).forEach(([c, ms]) => ms.forEach(m => { CAT_OF[m] = c; }));
-const catOf = m => CAT_OF[m] || 'Khác';
+const catOf = (t, m) => {
+  const key = CAT_OF[m];
+  if (!key) return t('categories.other');
+  return t('categories.' + key);
+};
 
 export default function DetailView({name, go, focus, clip, onClipClose, onPlayClip}) {
+  const { t } = useTranslation();
   /* ---- state camera từ /api/cameras (đã có stream 'chN', rtsp, name, algos). */
   const [cam, setCam] = useState(null);
   const [streams, setStreams] = useState(null);   // go2rtc /api/streams (nếu có)
@@ -169,8 +179,7 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
     return () => { alive = false; };
   }, [name]);
 
-  /* ---- Load go2rtc /api/streams (nếu có, để lấy producer url / codec).
-   *      Ở MOCK_DATA không có go2rtc nên 404 — rơi về dữ liệu camera. ---- */
+  /* ---- Load go2rtc /api/streams (nếu có, để lấy producer url / codec). ---- */
   useEffect(() => {
     let alive = true;
     jget(G + 'api/streams', 6000)
@@ -191,7 +200,7 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
         const mine = cid != null
           ? all.filter(a => a.channel_id === cid)
           : all.filter(a => a.channel_name === name || a.channel_id === name?.replace('ch', ''));
-        setHistory(mine.slice(0, 40));
+        setHistory(dedupBest(mine).slice(0, 40));
       })
       .catch(() => {});
   }, [cam, name]);
@@ -203,11 +212,6 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
     return () => clearInterval(iv);
   }, []);
 
-  /* ---- Stream live: useVideoStream tới go2rtc ws. MOCK không có go2rtc
-   *      -> player rơi vào trạng thái error/retry, giao diện vẫn đúng. ---- */
-  // Đang xem lại clip -> src null: hook tháo player live và KHÔNG mở WS nữa (clip
-  // chiếu trên chính stage này, giống detachDetailPlayer() của bản gốc). Kéo song
-  // song cả luồng live thì vừa tốn băng thông vừa tranh tiếng với clip.
   const wsSrc = (name && !clip) ? (G + 'api/ws?src=' + encodeURIComponent(name)) : null;
   const {ref: wrapRef, state} = useVideoStream(
     wsSrc,
@@ -228,7 +232,6 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
     if (!hasOnvif) setPtzOpen(false);
   }, [cam, streams, name]);
 
-  // Khi mở bảng PTZ, hỏi box đã lưu home (set_home) chưa -> tô màu nút Lưu nếu có.
   const [hasHome, setHasHome] = useState(false);
   useEffect(() => {
     if (!ptzOpen || !ptzOk) return;
@@ -242,13 +245,6 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
   }).then(r => r.json().catch(() => ({}))).catch(() => ({}));
 
-  // Backend dùng ONVIF ContinuousMove: MỘT lệnh 'move' là camera chạy mãi tới khi
-  // có 'stop'. Nên KHÔNG cần interval lặp lệnh (interval cũ chỉ spam lại lệnh đã
-  // có hiệu lực). Chỉ cần: nhấn -> move, nhả -> stop.
-  //   bấm nhanh -> vẫn để chạy đủ STEP_MS rồi mới stop  => nhích 1 đoạn bé
-  //   bấm giữ   -> chạy liên tục cho tới lúc nhả
-  // ponytail: STEP_MS 220ms = độ dài 1 bước nhích; đây là núm tinh chỉnh — camera
-  // chậm thì tăng, bước đi quá xa thì giảm.
   const STEP_MS = 220;
   const ptzStop = useRef(0);      // id setTimeout của lệnh stop đang chờ
   const ptzDownAt = useRef(0);    // mốc lúc nhấn, để đo đã giữ bao lâu
@@ -274,20 +270,14 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
     ptzReq({src: name, cmd: 'move', ...move});
   };
 
-  // Handler nhận THẲNG event (onPointerUp={ptzRelease}) -> chỉ 1 tham số.
-  // Trước đây khai báo (pz, e) nên e = undefined -> e.currentTarget ném lỗi,
-  // lệnh 'stop' không bao giờ chạy -> bấm 1 lần camera chạy mãi.
   const ptzRelease = e => {
     if (!e.currentTarget._pz) return;
     e.currentTarget._pz = false;
-    // Nhả sớm hơn STEP_MS thì hoãn 'stop' cho đủ một bước nhìn thấy được.
     const wait = Math.max(0, STEP_MS - (Date.now() - ptzDownAt.current));
     clearTimeout(ptzStop.current);
     ptzStop.current = setTimeout(sendStop, wait);
   };
 
-  // Rời view / đổi camera khi đang giữ nút: pointerup không bao giờ tới, phải
-  // gửi 'stop' để camera không quay tiếp sau khi unmount.
   useEffect(() => () => {
     if (!ptzMoving.current && !ptzStop.current) return;
     clearTimeout(ptzStop.current);
@@ -295,43 +285,34 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name]);
 
-  /* ---- Tải lại luồng (nút Tải lại luồng) = đổi t0 reset + reload stream. ---- */
-  const reload = () => {
-    t0Ref.current = Date.now();
-    setUptime(0);
-  };
-
   /* ---- Sidebar rows: từ camera (/api/cameras) + go2rtc streams (nếu có). ---- */
   const producer = (streams || {})[name]?.producers?.[0];
   const pUrl = producer?.url || cam?.rtsp || null;
   const dash = <span className="rv none">—</span>;
-  const audioSrc = (cam?.algos || []).length ? 'có ở nguồn' : null; // mock chưa kê audio
+  const audioSrc = (cam?.algos || []).length ? t('detail.audioExist') : null;
   const row1 = (
     <>
-      {R('URL', pUrl ? mask(pUrl) : dash, 'dim')}
-      {R('Nguồn', producer ? `${producer.remote_addr || '—'} · ${producer.protocol || '—'}` : dash)}
-      {R('Codec', producer?.receivers?.some?.(x => x.codec?.codec_type === 'video') ? 'H.264' : dash)}
-      {R('Bitrate', dash)}
-      {R('Âm thanh', 'không có', 'none')}
-      {R('Người xem', String((streams || {})[name]?.consumers?.length ?? 0))}
+      {R(t('detail.url'), pUrl ? mask(pUrl) : dash, 'dim')}
+      {R(t('detail.source'), producer ? `${producer.remote_addr || '—'} · ${producer.protocol || '—'}` : dash)}
+      {R(t('detail.codec'), producer?.receivers?.some?.(x => x.codec?.codec_type === 'video') ? 'H.264' : dash)}
+      {R(t('detail.bitrate'), dash)}
+      {R(t('detail.audio'), t('detail.audioNone'), 'none')}
+      {R(t('detail.viewers'), String((streams || {})[name]?.consumers?.length ?? 0))}
     </>
   );
   const row2 = (
     <>
-      {R('Chế độ', live ? (playMode || 'RTC') : 'đang thoả thuận…', live ? 'ok' : 'warn')}
-      {R('Phân giải', dash)}
-      {R('FPS', dash)}
-      {R('Khung rơi', dash)}
-      {R('RTT', dash)}
-      {R('Kết nối', `${Math.floor(uptime / 60)}m ${pad(uptime % 60)}s`)}
+      {R(t('detail.mode'), live ? (playMode || 'RTC') : t('detail.connecting'), live ? 'ok' : 'warn')}
+      {R(t('detail.resolution'), dash)}
+      {R(t('detail.fps'), dash)}
+      {R(t('detail.dropped'), dash)}
+      {R(t('detail.rtt'), dash)}
+      {R(t('detail.connection'), `${Math.floor(uptime / 60)}m ${pad(uptime % 60)}s`)}
     </>
   );
 
-  const qual = live ? (playMode ? playMode + '' : '') : 'đang chờ hình…';
+  const qual = live ? (playMode ? playMode + '' : '') : t('detail.waitingStream');
 
-  // Thông báo phủ trên clip: 'load' khi đang kéo từ box, 'err' khi box không còn giữ
-  // đoạn đó. Reset mỗi lần đổi clip (theo url) chứ không theo object, để mở lại đúng
-  // clip cũ vẫn hiện "đang tải".
   const [clipMsg, setClipMsg] = useState(null);
   useEffect(() => { setClipMsg(clip ? 'load' : null); }, [clip?.url]);
 
@@ -340,38 +321,6 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
   return (
     <section className="view" id="v-detail">
       <div className="view-wrap" style={{gap: 14}}>
-        {/* ===== bar ===== */}
-        <div className="bar" style={{gap: 12, flexWrap: 'wrap'}}>
-          <button data-glassbtn id="back" style={{height: 36, padding: '0 14px'}} onClick={() => go?.('live')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                 strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
-              <path d="M15 5l-7 7 7 7" />
-            </svg>
-            <span>Tất cả camera</span>
-          </button>
-          <div style={{display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0}}>
-            <span className="view-h2" id="dName">{name || '—'}</span>
-            <span className="view-sub" id="dSrc" style={{fontSize: 11}}>
-              {pUrl ? mask(pUrl) : '—'}
-            </span>
-          </div>
-          <div className="grow" />
-          <button data-goldbtn id="dAI" style={{height: 36}} onClick={() => go?.('ai')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="#2a2410" strokeWidth="1.8"
-                 strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
-              <path d="M12 9.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2M19 12a7 7 0 0 0-.1-1l1.6-1.3-1.7-2.9-1.9.8a7 7 0 0 0-1.7-1L14.8 4H9.2l-.4 2a7 7 0 0 0-1.7 1l-1.9-.8-1.7 2.9L5.1 11a7 7 0 0 0 0 2l-1.6 1.3 1.7 2.9 1.9-.8a7 7 0 0 0 1.7 1l.4 2h5.6l.4-2a7 7 0 0 0 1.7-1l1.9.8 1.7-2.9-1.6-1.3a7 7 0 0 0 .1-1" />
-            </svg>
-            <span>Cấu hình AI</span>
-          </button>
-          <button data-glassbtn id="dReload" style={{height: 36, padding: '0 14px'}} onClick={reload}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-                 strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
-              <path d="M20 12a8 8 0 1 1-2.4-5.7M20.5 4v4.2h-4.2" />
-            </svg>
-            <span>Tải lại luồng</span>
-          </button>
-        </div>
-
         {/* ===== split: stage + sidebar (grid 2 cột), hist-bar full width ===== */}
         <div data-split
              style={{flex: 1, minHeight: 0, display: 'grid',
@@ -388,8 +337,6 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
               {/* live player */}
               <div ref={wrapRef}
                    style={{position: 'absolute', inset: 0, zIndex: 1}} />
-              {/* clip xem lại — chiếu trên CHÍNH stage này (port openVideo ui.js:1012),
-                  không phải modal riêng. CSS .vod-v/.vod-msg đã có sẵn trong style.css. */}
               {clip && (
                 <>
                   <video className="vod-v" controls autoPlay playsInline src={clip.url}
@@ -398,15 +345,15 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
                   {clipMsg && (
                     <div className={'vod-msg' + (clipMsg === 'err' ? ' err' : '')}>
                       {clipMsg === 'err'
-                        ? 'Không tải được clip. Box chỉ giữ video trong thời gian ngắn — cảnh báo cũ có thể đã bị xoá khỏi bộ nhớ box.'
-                        : 'Đang tải clip từ AI box…'}
+                        ? t('detail.clipPlayErr')
+                        : t('detail.clipLoading')}
                     </div>
                   )}
                 </>
               )}
               <div className="s-top">
                 {clip
-                  ? <span className="live back" id="dLive" title="Bấm để trở về luồng trực tiếp"
+                  ? <span className="live back" id="dLive" title={t('detail.backToLive')}
                           style={{cursor: 'pointer'}} onClick={() => onClipClose?.()}>
                       <span className="dot" />LIVE
                     </span>
@@ -414,18 +361,18 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
                       <span className="dot" />LIVE
                     </span>}
                 <span className="qual" id="dQual">
-                  {clip ? (clip.algo || 'Clip phát hiện') : qual}
+                  {clip ? (clip.algo || t('detail.detectedClip')) : qual}
                 </span>
               </div>
               <div className="s-bot">
-                <button id="dPlay" title="Tạm dừng"
+                <button id="dPlay" title={paused ? t('detail.play') : t('detail.pause')}
                         onClick={e => {
                           const v = wrapRef.current?.querySelector('video');
                           if (!v) return;
                           if (v.paused) v.play(); else v.pause();
                           setPaused(v.paused);
                         }}>{paused ? '▶' : '⏸'}</button>
-                <button id="dMute" title={muted ? 'Tắt tiếng' : 'Bật tiếng'}
+                <button id="dMute" title={muted ? t('detail.unmute') : t('detail.mute')}
                         onClick={() => {
                           const v = wrapRef.current?.querySelector('video');
                           const next = !muted;
@@ -434,117 +381,95 @@ export default function DetailView({name, go, focus, clip, onClipClose, onPlayCl
                         }}>
                   {muted ? '🔇' : '🔊'}
                 </button>
-                <button id="dFull" title="Toàn màn hình"
+                <button id="dFull" title={t('detail.fullscreen')}
                         onClick={() => { const st = stageRef.current; document.fullscreenElement ? document.exitFullscreen() : st?.requestFullscreen?.(); }}>⛶</button>
-                <button id="ptzToggle" title="Điều khiển camera"
+                <button id="ptzToggle" title={t('detail.ptzControl')}
                         className={'ptz-toggle' + (ptzOpen ? ' on' : '')}
                         hidden={!ptzOk}
                         onClick={() => setPtzOpen(o => !o)}>✥</button>
                 <div className="grow" />
-                <span className="qual" id="dUp">{live ? 'Chế độ ' + (playMode || '') : '—'}</span>
+                <span className="qual" id="dUp">{live ? (t('detail.mode') + ' ' + (playMode || '')) : '—'}</span>
               </div>
 
               {/* PTZ round joystick */}
               <div className="ptz" id="ptz" hidden={!ptzOpen}>
                 <div className="ptz-dial" id="ptzDial">
-                  <button data-pz="up" className="pz-q up" title="Lên"
+                  <button data-pz="up" className="pz-q up" title={t('detail.ptzUp')}
                           onPointerDown={e => ptzHold('up', e)}
                           onPointerUp={ptzRelease} onPointerCancel={ptzRelease} onPointerLeave={ptzRelease}>
                     <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
                   </button>
-                  <button data-pz="left" className="pz-q left" title="Trái"
+                  <button data-pz="left" className="pz-q left" title={t('detail.ptzLeft')}
                           onPointerDown={e => ptzHold('left', e)}
                           onPointerUp={ptzRelease} onPointerCancel={ptzRelease} onPointerLeave={ptzRelease}>
                     <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
                   </button>
-                  <button data-pz="home" className="pz-home" title="Về giữa"
+                  <button data-pz="home" className="pz-home" title={t('detail.ptzHome')}
                           onClick={() => ptzReq({src: name, cmd: 'home'})}>
                     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" /><path d="M8.5 12h7M12 8.5v7" /></svg>
                   </button>
-                  <button data-pz="right" className="pz-q right" title="Phải"
+                  <button data-pz="right" className="pz-q right" title={t('detail.ptzRight')}
                           onPointerDown={e => ptzHold('right', e)}
                           onPointerUp={ptzRelease} onPointerCancel={ptzRelease} onPointerLeave={ptzRelease}>
                     <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
                   </button>
-                  <button data-pz="down" className="pz-q down" title="Xuống"
+                  <button data-pz="down" className="pz-q down" title={t('detail.ptzDown')}
                           onPointerDown={e => ptzHold('down', e)}
                           onPointerUp={ptzRelease} onPointerCancel={ptzRelease} onPointerLeave={ptzRelease}>
                     <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
-                  </button>
-                </div>
-                <div className="ptz-zoom">
-                  <button data-pz="zin" title="Phóng to"
-                          onPointerDown={e => ptzHold('zin', e)}
-                          onPointerUp={ptzRelease} onPointerCancel={ptzRelease} onPointerLeave={ptzRelease}>
-                    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
-                  </button>
-                  <button data-pz="zout" title="Thu nhỏ"
-                          onPointerDown={e => ptzHold('zout', e)}
-                          onPointerUp={ptzRelease} onPointerCancel={ptzRelease} onPointerLeave={ptzRelease}>
-                    <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
-                  </button>
-                  <button data-pz="sethome" title="Lưu vị trí này làm chỗ về giữa"
-                          onClick={() => { ptzReq({src: name, cmd: 'set_home'}).then(() => setHasHome(true)); }}
-                          style={hasHome ? {
-                            color: 'var(--gold2)', borderColor: 'rgba(234,183,72,.7)',
-                            background: 'rgba(234,183,72,.14)', boxShadow: '0 0 8px rgba(234,183,72,.35)',
-                          } : undefined}>
-                    <svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z" /></svg>
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ---- sidebar ---- */}
           <aside style={{minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12, padding: 0,
                           width: 'auto', overflow: 'visible'}}>
-            <div className="card" data-glass style={{flex: 'none', borderRadius: 18}}>
-              <div className="card-h">Luồng RTSP · Phiên xem</div>
-              <div id="dRows">{row1}</div>
-              <div id="dRows2">{row2}</div>
+            <div className="card" data-glass style={{flex: 'none', minHeight: '300px', padding: '16px 18px', borderRadius: 18, display: 'flex', flexDirection: 'column', justifyContent: 'space-between'}}>
+              <div className="card-h" style={{marginBottom: 2}}>{t('detail.streamInfo')}</div>
+              <div id="dRows" style={{display: 'flex', flexDirection: 'column', gap: 6}}>{row1}</div>
+              <div id="dRows2" style={{borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 10, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6}}>{row2}</div>
             </div>
             <div className="card" data-glass style={{flex: 1, minHeight: 0, borderRadius: 18}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: 9}}>
-                <span className="card-h">Thuật toán AI</span>
+              <div style={{display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6}}>
+                <span className="card-h">{t('detail.aiAlgos')}</span>
                 <div className="grow" />
+                <button data-goldbtn style={{height: 26, padding: '0 10px', fontSize: 11, borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer'}}
+                        onClick={() => go?.('ai')}>
+                  <span>{t('detail.aiConfigBtn')}</span>
+                  <span style={{opacity: .85}}>→</span>
+                </button>
               </div>
               <div id="dAlgos" style={{flex: 1, minHeight: 0, overflow: 'auto'}}>
                 {algos.length
-                  ? algos.map(m => <AlgoRow key={m} model={m} />)
-                  : <span className="h-none">Camera này chưa bật thuật toán nào</span>}
-              </div>
-              <div id="dAiCta"
-                   style={{marginTop: 'auto', paddingTop: 11, borderTop: '1px solid rgba(255,255,255,.08)',
-                           display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer'}}>
-                <span style={{font: '600 11px/1 var(--b)', color: '#d5c295'}}>Cấu hình vùng &amp; quy tắc</span>
-                <span style={{font: '500 11px/1 var(--b)', color: '#d5c295'}}>→</span>
+                  ? algos.map(m => <AlgoRow key={m} model={m} t={t} />)
+                  : <span className="h-none">{t('detail.noAlgos')}</span>}
               </div>
             </div>
           </aside>
 
-          {/* ---- history bar (full width) ---- */}
           <div className="hist-bar" data-glass style={{gridColumn: '1/-1', borderRadius: 18}}>
             <div className="hist-h" style={{flexWrap: 'wrap'}}>
-              <span className="hist-t">Lịch sử cảnh báo</span>
+              <span className="hist-t">{t('detail.alertHistory')}</span>
               <span className="hist-n" id="histN">
-                {history.length ? history.length + ' cảnh báo' : 'chưa có cảnh báo'}
+                {history.length ? t('detail.alertCount', {count: history.length}) : t('detail.noAlerts')}
               </span>
               <div className="grow" />
               <span style={{font: '400 10px/1 var(--b)', color: 'rgba(229,229,234,.38)', whiteSpace: 'nowrap'}}>
-                cuộn ngang · bấm để xem lại clip
+                {t('detail.histHint')}
               </span>
             </div>
-            <div className="hist-list nosb" id="hist">
+            <div className="hist-list nosb" id="hist"
+              onWheel={e => { if (e.deltaY) e.currentTarget.scrollLeft += e.deltaY; }}>
               {history.length
                 ? history.map(a => (
-                  <HItem key={a.event_id != null ? a.event_id : 'ts' + (a.ts || 0)} alarm={a}
+                  <HItem key={evKey(a)} alarm={a} t={t}
                          onPlay={x => onPlayClip?.({
                            url: videoOf(x),
-                           algo: algoName(x.algo_model, x.algo_name),
+                           algo: algoName(t, x.algo_model, x.algo_name),
                          })} />
                 ))
-                : <span className="h-none">Chưa có cảnh báo nào từ AI box cho camera này</span>}
+                : <span className="h-none">{t('live.noAlertsFromBox')}</span>}
             </div>
           </div>
         </div>

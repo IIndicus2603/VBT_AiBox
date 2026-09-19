@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useRef, useCallback} from 'react';
-import {BASE} from './api/client.js';
+import {BASE, evKey} from './api/client.js';
 import Header from './components/Header.jsx';
 import LiveView from './views/LiveView.jsx';
 import DetailView from './views/DetailView.jsx';
@@ -10,6 +10,7 @@ import CamView from './views/CamView.jsx';
 import AiView from './views/AiView.jsx';
 import ConfigView from './views/ConfigView.jsx';
 import useEvents from './api/useEvents.js';
+import { LanguageProvider, useTranslation } from './i18n/index.jsx';
 
 /**
  * App shell — port index.html:18-116 (aurora + header + body) và go() app.js:336.
@@ -28,13 +29,13 @@ const VIEWS = {
   cfg: ConfigView,
 };
 
-export default function App() {
+function AppInner() {
   const [view, setView] = useState('live');
   const [focus, setFocus] = useState(null); // tên luồng đang mở ở detail
   // Clip đang xem lại: {url, algo} — null = đang xem luồng trực tiếp. Clip chiếu
   // trên chính stage của trang chi tiết (port openVideo/stopVideo ui.js:1012).
   const [clip, setClip] = useState(null);
-  const [lang, setLang] = useState('vi');
+  const { lang, setLang } = useTranslation();
   const [boxOnline] = useState(true);
   // Badge cảnh báo chưa đọc trên toàn app (icon Nhật ký) — port #navUnread.
   // Nguồn sự thật là Mongo (alarm.seen), không phải bộ đếm trong RAM: số này
@@ -61,66 +62,68 @@ export default function App() {
     setN(unreadRef.current + 1);
   }, []);
 
-  // Đánh dấu đã đọc: body {} = tất cả, {event_id:[id]} = 1 cảnh báo. Server trả
-  // count còn lại -> lấy luôn, không tự trừ (2 tab cùng mở vẫn khớp).
-  const markRead = async body => {
+  const readAll = async () => {
     try {
-      const j = await (await fetch(BASE + 'api/alarms/read', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(body),
-      })).json();
-      if (j.code === 0) setN(j.count || 0);
-    } catch { /* khe */ }
+      await fetch(BASE + 'api/alarms/mark-read-all', {method: 'POST'});
+      setN(0);
+    } catch { setN(0); }
   };
 
-  const go = v => {
-    // detail + ai là view phụ của 1 camera cụ thể -> giữ focus, không reset.
-    if (v === 'detail' || v === 'ai') {
-      setView(v);
-    } else {
-      setView(v);
-      setFocus(null); // closeDetail()
-      setClip(null);  // rời trang chi tiết -> thôi xem lại
-      // KHÔNG reset unread khi vào tab Nhật ký — badge chỉ giảm khi đã đọc
-      // (nút "Đã xem" trong log) hoặc bấm xem từng cảnh báo (openDetail).
-    }
+  const seen = ev => {
+    if (!ev || ev.seen) return;
+    fetch(BASE + 'api/alarms/mark-read', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: evKey(ev)}),
+    }).then(r => r.json()).then(j => {
+      if (j && typeof j.count === 'number') setN(j.count);
+    }).catch(() => {});
   };
 
-  const openDetail = name => {
-    setFocus(name);
-    setClip(null);   // mở camera = xem luồng trực tiếp, không phải clip cũ
+  const go = (targetView, opts) => {
+    if (targetView) setView(targetView);
+    if (opts?.focus !== undefined) setFocus(opts.focus);
+    if (opts?.cam !== undefined) setFocus(opts.cam);
+  };
+
+  const openDetail = camName => {
+    setClip(null);
+    setFocus(camName || null);
     setView('detail');
+  };
+
+  const openAi = camName => {
+    setFocus(camName || null);
+    setView('ai');
+  };
+
+  // Bấm 1 thẻ trong bảng thông báo (Dock) -> vào Nhật ký + highlight đúng sự kiện.
+  const [hlEvent, setHlEvent] = useState(null);
+  const goToEvent = ev => {
+    if (!ev) return;
+    const isClip = Boolean(ev.image_path && String(ev.image_path).includes('.mp4'));
+    if (isClip && ev.cam_id) {
+      openDetail(ev.cam_id);
+      setClip({url: BASE + 'aibox/picture?' + String(ev.image_path).split('?')[1], algo: ev.algo_name});
+    } else {
+      setHlEvent(ev);
+      setView('log');
+    }
   };
 
   // Bấm "Xem lại" ở nhật ký / lịch sử cảnh báo -> vào detail đúng camera rồi chiếu
   // clip lên stage. Box cắt clip theo khoảng thời gian nên mỗi lần mở là 1 request.
-  const openClip = (cam, c) => {
-    if (cam) setFocus(cam);
-    setClip(c || null);
+  const openClip = (ev, fallbackCam) => {
+    if (!ev || !ev.image_path) return;
+    const camName = ev.cam_id || fallbackCam || focus;
+    if (camName) setFocus(camName);
+    const q = String(ev.image_path).split('?')[1];
+    setClip({url: BASE + 'aibox/picture?' + (q || ''), algo: ev.algo_name || ev.algo_model});
     setView('detail');
   };
 
-  // Bấm "Cấu hình AI" ở dòng camera (tab Camera) -> vào thẳng view AI của camera đó.
-  const openAi = name => {
-    setFocus(name);
-    setView('ai');
-  };
-
-  // Bấm xem 1 cảnh báo (hist-item / dòng nhật ký) -> ghi seen=true cho đúng
-  // alarm đó. Không có event_id (alarm cũ box không gửi) thì chỉ trừ tại chỗ.
-  const seen = eventId => {
-    if (eventId == null) {
-      if (unreadRef.current > 0) setN(unreadRef.current - 1);
-      return;
-    }
-    markRead({event_id: [eventId]});
-  };
-
-  // Nút "Đã xem" trong tab Nhật ký -> đánh dấu đã đọc toàn bộ.
-  const readAll = () => markRead({});
-
   const Active = VIEWS[view] || LiveView;
-  const detailName = focus;
+  const detailName = focus || 'ch1';
 
   return (
     <div id="app"
@@ -134,11 +137,14 @@ export default function App() {
 
       <Header
         view={view}
+        focus={focus}
         lang={lang}
         onGo={go}
-        onLang={() => setLang(l => (l === 'vi' ? 'en' : 'vi'))}
+        onLang={() => setLang(lang === 'vi' ? 'en' : 'vi')}
         boxOnline={boxOnline}
         unread={unread}
+        onEvent={goToEvent}
+        onReadAll={readAll}
       />
 
       <div className="body" style={{position: 'relative', zIndex: 1, flex: 1, minHeight: 0, display: 'flex'}}>
@@ -152,9 +158,18 @@ export default function App() {
                           onClip={openClip} />
               : <Active onOpen={openDetail} onAi={openAi} go={go} focus={focus}
                         onReadAll={readAll} onSeen={seen} unread={unread}
-                        onClip={openClip} />}
+                        onClip={openClip} highlight={hlEvent}
+                        onHighlightDone={() => setHlEvent(null)} />}
         </main>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <LanguageProvider>
+      <AppInner />
+    </LanguageProvider>
   );
 }

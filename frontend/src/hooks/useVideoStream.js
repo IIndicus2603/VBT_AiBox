@@ -73,6 +73,12 @@ export function useVideoStream(src, opts = {}, onState) {
     let stallLast = -1;
     let stallAt = 0;
     let retries = 0;
+    // Connect timeout RIÊNG (mặc định 20s): canh "connecting quá lâu" (WS mở nhưng
+    // chưa có frame). KHÔNG dùng stallTimeout 6s cho connecting — WebRTC/MSE negl
+    // của một số camera (Dahua/Imou) mất >6s, đóng WS sớm sẽ phá phiên (đã đo: camera
+    // tốt bị kẹt ĐANG KẾT NỐI). 20s cho đủ negl; camera chết vẫn thoát -> error.
+    let connectTO = 0;
+    let connectOn = false;
 
     const stallReset = () => {
       clearTimeout(stallTO);
@@ -93,6 +99,23 @@ export function useVideoStream(src, opts = {}, onState) {
       console.warn('[stream] stalled ' + (p.stallTimeout / 1000) + 's, reconnecting');
       if (p.ws && p.ws.readyState === WebSocket.OPEN) p.ws.close();
       stallReset();
+    };
+    const connectDetect = () => {
+      connectOn = false;
+      if (!p.ws || p.ws.readyState !== WebSocket.OPEN) return;
+      console.warn('[stream] connect timeout ' + ((opts.connectTimeout ?? 20000) / 1000) + 's, reconnecting');
+      p.ws.close();
+    };
+    const armConnect = () => {
+      if (connectOn) return;
+      connectOn = true;
+      clearTimeout(connectTO);
+      connectTO = setTimeout(connectDetect, opts.connectTimeout ?? 20000);
+    };
+    const disarmConnect = () => {
+      connectOn = false;
+      clearTimeout(connectTO);
+      connectTO = 0;
     };
     const armStall = () => {
       if (stallOn) return;
@@ -120,6 +143,7 @@ export function useVideoStream(src, opts = {}, onState) {
       p.video.addEventListener('resize', () => {
         if (p.video.videoHeight) {
           retries = 0;
+          disarmConnect();   // đã có hình -> hết giai đoạn connecting
           emit('live', {mode: p.playMode});
           armStall();
         }
@@ -128,7 +152,7 @@ export function useVideoStream(src, opts = {}, onState) {
     const origOnconnect = p.onconnect.bind(p);
     p.onconnect = () => {
       const ok = origOnconnect();
-      if (ok) { emit('connecting'); armStall(); }
+      if (ok) { emit('connecting'); armConnect(); }
       return ok;
     };
     const origOnopen = p.onopen.bind(p);
@@ -144,7 +168,8 @@ export function useVideoStream(src, opts = {}, onState) {
     p.onclose = () => {
       const retry = origOnclose();
       if (retry && p.pcState !== WebSocket.OPEN) {
-        stallDisarm();      // WS đóng, chờ reconnect -> tạm dừng canh treo
+        disarmConnect();    // WS đóng, chờ reconnect -> tạm dừng connect timeout
+        stallDisarm();      // WS đóng -> tạm dừng canh treo
         if (++retries > p.maxRetry) {
           emit('error', {error: 'Thử lại ' + p.maxRetry + ' lần không được'});
         } else {
@@ -163,6 +188,7 @@ export function useVideoStream(src, opts = {}, onState) {
       origOndisconnect();
       p.playMode = null;
       retries = 0;
+      disarmConnect();
       stallDisarm();
       emit('idle');
     };
@@ -179,6 +205,7 @@ export function useVideoStream(src, opts = {}, onState) {
 
     return () => {
       stallDisarm();
+      disarmConnect();
       clearTimeout(restartTRef.current);
       restartTRef.current = 0;
       p.remove();

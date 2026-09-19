@@ -12,9 +12,14 @@
 const noPort = s => String(s).replace(/\/+$/, '').replace(/:\d+$/, '');
 const guessOrigin = () => {
   if (typeof location !== 'undefined') {
-    return (location.protocol || 'http:') + '//' + (location.hostname || '127.0.0.1');
+    // return (location.protocol || 'http:') + '//' + (location.hostname || '127.0.0.1');
+    const host = location.hostname;
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      return location.protocol + '//' + host;
+    }
   }
   return 'http://localhost';
+  // return 'http://192.168.21.56';
 };
 
 export const ORIGIN = noPort(globalThis.AIBOX_ORIGIN || guessOrigin());
@@ -58,6 +63,31 @@ export const imgOf = a => {
   const p = (a?.images || [])[0];
   if (!p) return null;
   return absUrl(String(p).startsWith('/') ? p : 'alarms/' + p);
+};
+
+/** Khóa ổn định + DUY NHẤT cho 1 sự kiện để dùng làm React key / data-id / dedup.
+ *  event_id của box KHÔNG phải là duy nhất: cùng 1 lần phát hiện, box đẩy 2 biến thể
+ *  là type 1 (behavior) và type 5 (behavior+match) nhưng dùng chung event_id — nên
+ *  ghép thêm type để không trùng key, không dedup nhầm, và highlight đúng 1 dòng. */
+export const evKey = a => {
+  if (!a || a.event_id == null) return 'ts' + (a.ts || '0');
+  return a.event_id + ':' + (a.type ?? '');
+};
+
+/** Gộp các sự kiện trùng event_id, chỉ giữ bản "đầy đủ nhất". Box gửi cùng 1 lần
+ *  phát hiện 2 biến thể: type 1 (behavior) rồi type 5 (behavior+match, có nhận diện
+ *  người). Nếu đã có type 5 thì bỏ type 1. Giữ nguyên thứ tự, bổ sung bản không có
+ *  event_id (lọc theo ts riêng ở chỗ dùng). */
+export const dedupBest = list => {
+  const best = new Map();
+  const noId = [];
+  for (const a of list || []) {
+    if (!a) continue;
+    if (a.event_id == null) { noId.push(a); continue; }
+    const cur = best.get(a.event_id);
+    if (!cur || (a.type ?? 0) > (cur.type ?? 0)) best.set(a.event_id, a);
+  }
+  return [...noId, ...best.values()];
 };
 
 /** Clip xem lại của 1 alarm (port videoOf ai.js:1461). Box KHÔNG giữ sẵn file: video_url

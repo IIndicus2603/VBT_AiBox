@@ -10,26 +10,32 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8090',
+        // target: 'http://192.168.21.56:8090',
         changeOrigin: true,
       },
       '/aibox': {
         target: 'http://localhost:8090',
+        // target: 'http://192.168.21.56:8090',
         changeOrigin: true,
       },
       '/events': {
         target: 'http://localhost:8090',
+        // target: 'http://192.168.21.56:8090',
         changeOrigin: true,
       },
       '/alarm': {
         target: 'http://localhost:8090',
+        // target: 'http://192.168.21.56:8090',
         changeOrigin: true,
       },
       '/alarms': {
         target: 'http://localhost:8090',
+        // target: 'http://192.168.21.56:8090',
         changeOrigin: true,
       },
       '/api/ws': {
         target: 'ws://localhost:1984',
+        // target: 'ws://192.168.21.56:1984',
         ws: true,
         changeOrigin: true,
       },

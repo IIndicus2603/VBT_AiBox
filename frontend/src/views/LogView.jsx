@@ -1,6 +1,7 @@
 import React, {Fragment, useCallback, useEffect, useMemo, useState} from 'react';
-import {BASE, pad, absUrl, imgOf, videoOf} from '../api/client.js';
+import {BASE, pad, absUrl, imgOf, videoOf, evKey, dedupBest} from '../api/client.js';
 import useEvents from '../api/useEvents.js';
+import { useTranslation } from '../i18n/index.jsx';
 
 /**
  * NHẬT KÝ — port của ui.js paintAlarms()/paintLogFilter()/tlRow() (677-1001)
@@ -18,15 +19,15 @@ import useEvents from '../api/useEvents.js';
 
 // KIND_COLOR (ui.js:681) — mốc màu theo nhóm thuật toán, key khớp ALGO_CAT.
 const KIND_COLOR = {
-  'Chức năng chung': '#d9a233',
-  'Môi trường': '#5fe3d0',
-  'Bảo hộ lao động (PPE)': '#ff4d4f',
-  'Hành vi': '#e8a020',
-  'Phương tiện': '#7aa2f7',
-  'Sự kiện đường cao tốc': '#c48a29',
-  'Thuỷ lợi / Quản lý đô thị': '#3ddc97',
-  'AlertFree': '#8b9aa8',
-  'Khác': '#8b9aa8',
+  'general': '#d9a233',
+  'environment': '#5fe3d0',
+  'ppe': '#ff4d4f',
+  'behavior': '#e8a020',
+  'vehicle': '#7aa2f7',
+  'highway': '#c48a29',
+  'urban': '#3ddc97',
+  'alertFree': '#8b9aa8',
+  'other': '#8b9aa8',
 };
 
 // ALGO_VI (ai.js:80-179) — tên hiển thị cho algo_model (box chỉ trả mã kỹ thuật).
@@ -133,10 +134,10 @@ const ALGO_VI = {
 
 // ALGO_CAT (ai.js:195-227) — nhóm cho từng algo_model, theo đúng thứ tự box.
 const ALGO_CAT = {
-  'Chức năng chung': ['ObjectIsRecognized', 'FieldDetectorObjectsInside', 'LineDetectorCrossed',
+  'general': ['ObjectIsRecognized', 'FieldDetectorObjectsInside', 'LineDetectorCrossed',
     'EnterArea', 'LeaveArea', 'AreaRuleData', 'CrowdDensityCriticalAlarm', 'LineRuleData',
     'PresetMarkerDetection'],
-  'Môi trường': ['FireDetection', 'FumesAlarmBegin', 'ChannelBlockageDetection', 'ObjectRemoved',
+  'environment': ['FireDetection', 'FumesAlarmBegin', 'ChannelBlockageDetection', 'ObjectRemoved',
     'UncoveredTrashCanDetection', 'MouseDetect', 'BareSoilCoverDetection', 'DisorderStackingDetection',
     'TrashOverflowingDetection', 'ExposedGarbageDetection', 'DogDetection', 'PackedGarbageDetection',
     'ChargingGunNotinPlace', 'NoFireExtinguisherDetection', 'DumpTruckWithoutTarp', 'OilLeakDetection',
@@ -145,42 +146,51 @@ const ALGO_CAT = {
     'WildlifeIntrusionDetection', 'FreightInPassengerElevator', 'LightsLeftOnDetection',
     'LongQueueDetection', 'AccessElevatorAlarm', 'ElectricBicycleIntrusionDetection',
     'FuelUnloadDetect'],
-  'Bảo hộ lao động (PPE)': ['SafetyHelmetAlarm', 'WorkClothesAlarm', 'ReflectiveClothesDetectionAlarm',
+  'ppe': ['SafetyHelmetAlarm', 'WorkClothesAlarm', 'ReflectiveClothesDetectionAlarm',
     'NoMaskAlarm', 'ShirtlessDetection', 'ChefClothesDetection', 'ChefHatAlarm',
     'SafetyHarnessDetection', 'NoSafetyBeltDetection', 'NoSafetyGogglesDetection',
     'NoSafetyGlovesDetection', 'NoDustGasMaskDetection', 'ExposedLongHairDetection'],
-  'Hành vi': ['SleepingDetectionAlarm', 'OffDutyDetectionAlarm', 'SmokingAlarm', 'TelephoningAlarm',
+  'behavior': ['SleepingDetectionAlarm', 'OffDutyDetectionAlarm', 'SmokingAlarm', 'TelephoningAlarm',
     'PlayMobilePhoneDetection', 'FallOverAlarm', 'ClimbingDetectionAlarm', 'LongStayDetection',
     'FightDetectionAlarm', 'PeopleGathering', 'FastMoving', 'StayAloneDetection',
     'KnifeStickDetection', 'HandDetection', 'PedestrianAntiDirectionDetection',
     'ReverseMotionOnEscalator', 'GunmanDetection'],
-  'Phương tiện': ['AbnormalParkingDetection', 'UnwashedVehicleDetection',
+  'vehicle': ['AbnormalParkingDetection', 'UnwashedVehicleDetection',
     'NonMotorAbnormalParkingDetection', 'VehicleOverspeedDetection', 'ForkliftOverspeedDetection',
     'ForkliftDetection', 'EngineeringVehicleDetection', 'VehicleEnterExitServiceStation',
     'CampusEntranceExitLPC', 'CampusVehicleCongestionDetection'],
-  'Sự kiện đường cao tốc': ['ThrowingEvent', 'TrafficAccident', 'DriveSlowly', 'DriveAway', 'Fogging',
+  'highway': ['ThrowingEvent', 'TrafficAccident', 'DriveSlowly', 'DriveAway', 'Fogging',
     'AbnormalParkingDetection_HighSpeedEvent', 'NonMotorVehicleIntrusionDetection',
     'OccupancyEmergencyLane', 'Pedestrian', 'Retrograde', 'SnowCover', 'Congestion', 'Construction',
     'TrafficParameters', 'SmokeAndFireDetectionEvent', 'TrafficParameter'],
-  'Thuỷ lợi / Quản lý đô thị': ['WaterOutletDischargeDetection', 'ShipDetection'],
-  'AlertFree': ['GasCylinderDetection', 'RestrictedAreaFishingDetection'],
+  'urban': ['WaterOutletDischargeDetection', 'ShipDetection'],
+  'alertFree': ['GasCylinderDetection', 'RestrictedAreaFishingDetection'],
 };
 
 const CAT_OF = Object.fromEntries(
   Object.entries(ALGO_CAT).flatMap(([c, ms]) => ms.map(m => [m, c])));
 
 /** Gom danh sách algo_model thành [{cat, models}] theo thứ tự ALGO_CAT. */
-function algoGroups(models) {
+function algoGroups(models, t) {
   const has = new Set(models);
   const out = Object.entries(ALGO_CAT)
-    .map(([cat, ms]) => ({cat, models: ms.filter(m => has.has(m))}))
+    .map(([catKey, ms]) => ({
+      catKey,
+      cat: t ? t('categories.' + catKey) : catKey,
+      models: ms.filter(m => has.has(m))
+    }))
     .filter(g => g.models.length);
   const rest = models.filter(m => !CAT_OF[m]);
-  if (rest.length) out.push({cat: 'Khác', models: rest});
+  if (rest.length) out.push({catKey: 'other', cat: t ? t('categories.other') : 'Khác', models: rest});
   return out;
 }
 
-const algoName = (m, fromBox) => fromBox || ALGO_VI[m] || m;
+const algoName = (t, m, fromBox) => {
+  if (fromBox) return fromBox;
+  const tr = t?.('algos.' + m);
+  if (tr && tr !== ('algos.' + m)) return tr;
+  return ALGO_VI[m] || m;
+};
 
 /* ---------- helpers alarm, port từ ai.js ---------- */
 
@@ -206,14 +216,14 @@ function toggleIn(sel, key, allKeys) {
 }
 
 /** Nhãn nút Lọc: chọn đúng 1 mục thì hiện tên, còn lại đếm. */
-function logFilterLabel(logCams, logAlgos, cams, byCat) {
+function logFilterLabel(logCams, logAlgos, cams, byCat, t) {
   const p = [];
   if (logCams) {
     p.push(logCams.size === 1 ? (cams.get([...logCams][0])?.label || '1 camera')
                               : logCams.size + ' camera');
   }
   if (logAlgos) {
-    if (logAlgos.size > 1) p.push(logAlgos.size + ' hành vi');
+    if (logAlgos.size > 1) p.push(logAlgos.size + ' ' + (t ? t('log.behavior') : 'hành vi'));
     else {
       const k = [...logAlgos][0];
       let lbl = k;
@@ -221,12 +231,13 @@ function logFilterLabel(logCams, logAlgos, cams, byCat) {
       p.push(lbl);
     }
   }
-  return p.length ? p.join(' · ') : 'Tất cả';
+  return p.length ? p.join(' · ') : (t ? t('log.all') : 'Tất cả');
 }
 
 /* ================= component ================= */
 
-export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
+export default function LogView({onOpen, onReadAll, onSeen, onClip, highlight, onHighlightDone}) {
+  const { t } = useTranslation();
   const [alarms, setAlarms] = useState([]);      // AL (đã lọc isDetect)
   const [loaded, setLoaded] = useState(false);
   const [logCams, setLogCams] = useState(null);  // Set camKey
@@ -299,8 +310,39 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
   // rows đã lọc + giới hạn 150 (paintAlarms).
   const rows = useMemo(() => {
     const all = alarms.filter(isDetect);
-    return all.filter(a => logMatch(a, logCams, logAlgos)).slice(0, 150);
+    return dedupBest(all.filter(a => logMatch(a, logCams, logAlgos)))
+      .slice(0, 150);
   }, [alarms, logCams, logAlgos]);
+
+  // Highlight sự kiện đến từ bảng thông báo (Dock): cuộn tới đúng dòng + nháy vàng.
+  useEffect(() => {
+    if (highlight == null) return;
+    let cancelled = false;
+    let tries = 0;
+    const id = String(highlight);
+    const step = () => {
+      if (cancelled) return;
+      const el = document.querySelector(`#logBox .tl-row[data-id="${CSS.escape(id)}"]`);
+      const box = document.querySelector('#logBox');
+      if (el && box) {
+        el.classList.add('hl');
+        // Cuộn chỉ riêng #logBox (container). scrollIntoView với nested scroll có
+        // thể kéo cả trang lên (header trôi khỏi màn hình) — tính offset thủ công.
+        const target = el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2;
+        box.scrollTop = Math.max(0, target);
+        setTimeout(() => el.classList.remove('hl'), 3400); // sau animation flash 2×1.6s
+        onHighlightDone?.();
+      } else if (tries++ < 60) {
+        // Dòng chưa render (LogView vừa mount đang nạp lịch sử) — chờ vài frame.
+        requestAnimationFrame(step);
+      } else {
+        onHighlightDone?.();
+      }
+    };
+    const raf = requestAnimationFrame(step);
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight]);
 
   // Phần nhóm lọc — gom từ chính dữ liệu đang có (paintLogFilter).
   const {cams, byCat, camAll, algoAll} = useMemo(() => {
@@ -311,14 +353,15 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
       const ck = camKey(a);
       const ce = c.get(ck);
       if (ce) ce.n++;
-      else c.set(ck, {label: ck === '?' ? 'Không rõ' : (a.channel_name || ck), n: 1});
-      const cat = algoGroups([a.algo_model])[0]?.cat || 'Khác';
+      else c.set(ck, {label: ck === '?' ? t('log.unknown') : (a.channel_name || ck), n: 1});
+      const catKey = algoGroups([a.algo_model], t)[0]?.catKey || 'other';
+      const cat = t('categories.' + catKey);
       const ak = algoKey(a);
       let m = b.get(cat);
       if (!m) b.set(cat, m = new Map());
       const ae = m.get(ak);
       if (ae) ae.n++;
-      else m.set(ak, {label: ak === '?' ? 'Không rõ' : algoName(a.algo_model, a.algo_name), n: 1});
+      else m.set(ak, {label: ak === '?' ? t('log.unknown') : algoName(t, a.algo_model, a.algo_name), n: 1});
     }
     return {
       cams: c,
@@ -326,7 +369,7 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
       camAll: [...c.keys()],
       algoAll: [...b.values()].flatMap(m => [...m.keys()]),
     };
-  }, [alarms]);
+  }, [alarms, t]);
 
   const inc = (sel, k) => !sel || sel.has(k);
 
@@ -345,7 +388,7 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
   // Dòng tiêu đề ngày — chỉ hiện nếu có dữ liệu.
   const d0 = rows[0]?.ts ? new Date(rows[0].ts * 1000) : null;
 
-  const label = logFilterLabel(logCams, logAlgos, cams, byCat);
+  const label = logFilterLabel(logCams, logAlgos, cams, byCat, t);
 
   return (
     <section className="view" id="v-log">
@@ -363,7 +406,7 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
             background: 'rgba(0, 0, 0, 0.18)'
           }}>
             <div className="tl-day" style={{padding: 0, margin: 0, flex: 1, minWidth: 0}}>
-              <span className="d">{d0 ? 'Hôm nay · ' + pad(d0.getDate()) + '/' + pad(d0.getMonth() + 1) : ''}</span>
+              <span className="d">{d0 ? t('log.today') + ' · ' + pad(d0.getDate()) + '/' + pad(d0.getMonth() + 1) : ''}</span>
               <div className="ln" />
             </div>
 
@@ -378,18 +421,18 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
                   <div className="menu" id="logFilterMenu" data-glass onClick={e => e.stopPropagation()}
                        style={{top: 'calc(100% + 8px)', right: 0, minWidth: 220, borderRadius: 14, background: 'linear-gradient(180deg,rgba(20,24,32,.95),rgba(12,15,20,.95))', border: '1px solid rgba(255,255,255,.18)', boxShadow: '0 16px 34px rgba(0,0,0,.6)', position: 'absolute', zIndex: 100}}>
                     <div id="logFilterList">
-                      <div className="msec">Camera</div>
+                      <div className="msec">{t('log.filterCamHeader')}</div>
                       {[...cams.keys()].sort((x, y) => chNum(x) - chNum(y)).map(k => {
                         const c = cams.get(k);
                         return <FilterRow key={'c' + k} cls={inc(logCams, k) ? 'on' : ''}
-                          label={c.label} n={c.n} color={KIND_COLOR['Khác']}
+                          label={c.label} n={c.n} color={KIND_COLOR['other']}
                           onClick={() => setLogCams(toggleIn(logCams, k, camAll))} />;
                       })}
                       <div className="msep" />
-                      <div className="msec">Hành vi</div>
+                      <div className="msec">{t('log.filterBehaviorHeader')}</div>
                       {[...byCat.keys()].sort().map(cat => {
                         const m = byCat.get(cat), keys = [...m.keys()];
-                        const color = KIND_COLOR[cat] || KIND_COLOR['Khác'];
+                        const color = KIND_COLOR[cat] || KIND_COLOR['other'];
                         const total = [...m.values()].reduce((sum, x) => sum + x.n, 0);
                         const on = keys.every(k => inc(logAlgos, k));
                         return (
@@ -414,10 +457,10 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
                 )}
               </div>
 
-              <button data-glassbtn id="logReadAll" title="Đánh dấu tất cả đã xem"
+              <button data-glassbtn id="logReadAll" title={t('log.markSeen')}
                       style={{height: 36, padding: '0 14px', borderRadius: 10}} onClick={readAll}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                <span>Đã xem</span>
+                <span>{t('log.seen')}</span>
               </button>
             </div>
           </div>
@@ -425,11 +468,11 @@ export default function LogView({onOpen, onReadAll, onSeen, onClip}) {
           <div id="logBox" className="nosb" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto'}}>
             {!loaded ? null
               : !rows.length
-                ? <div className="hint" style={{padding: '16px 18px'}}>Chưa có cảnh báo nào từ AI box</div>
+                ? <div className="hint" style={{padding: '16px 18px'}}>{t('log.noAlarms')}</div>
                 : (
                   <div className="tl">
                     {rows.map((a, i) => (
-                      <TlRow key={a.event_id != null ? a.event_id : 'ts' + (a.ts || 0)}
+                      <TlRow key={evKey(a)}
                         a={a} isNew={a.seen !== true} cleared={cleared}
                         onSkip={skipAlarm} onOpen={onOpen} onSeen={onSeen} onClip={onClip} />
                     ))}
@@ -457,9 +500,10 @@ function FilterRow({cls = '', label, n, color, onClick}) {
 /* Một dòng timeline — port tlRow() (ui.js:874). isNew = alarm.seen chưa true
  * (backend ghi seen vào Mongo), nên khớp đúng badge số trên toàn app. */
 function TlRow({a, isNew, cleared, onSkip, onOpen, onSeen, onClip}) {
-  const t = new Date((a.ts || 0) * 1000);
-  const g = algoGroups([a.algo_model])[0];
-  const col = KIND_COLOR[g?.cat] || KIND_COLOR['Khác'];
+  const { t } = useTranslation();
+  const time = new Date((a.ts || 0) * 1000);
+  const g = algoGroups([a.algo_model], t)[0];
+  const col = KIND_COLOR[g?.catKey] || KIND_COLOR['other'];
   const cam = camOf(a);
   const img = imgOf(a);
   const vid = videoOf(a);
@@ -467,15 +511,15 @@ function TlRow({a, isNew, cleared, onSkip, onOpen, onSeen, onClip}) {
 
   const showSkip = cam && !cleared.has(cam);
   const eventIdText = a.event_id ? `#${a.event_id}` : (a.id ? `#${a.id}` : null);
-  const camLocation = a.channel_name || cam || 'Chưa xác định';
+  const camLocation = a.channel_name || cam || t('log.unspecified');
   const ipText = a.ipc_addr || '192.168.21.181';
 
   return (
     <div className="tl-row"
-         data-id={a.event_id != null ? String(a.event_id) : 'ts' + (a.ts || '0')}>
+         data-id={evKey(a)}>
       <div className="tl-t">
-        <span className="tl-hm">{pad(t.getHours()) + ':' + pad(t.getMinutes())}</span>
-        <span className="tl-sec">{':' + pad(t.getSeconds())}</span>
+        <span className="tl-hm">{pad(time.getHours()) + ':' + pad(time.getMinutes())}</span>
+        <span className="tl-sec">{':' + pad(time.getSeconds())}</span>
       </div>
       <div className="tl-mid">
         <div className="ln" />
@@ -487,23 +531,23 @@ function TlRow({a, isNew, cleared, onSkip, onOpen, onSeen, onClip}) {
         <div className="tl-sec-1">
           <div className="tl-th">
             {img
-              ? <ImgThumb src={img} alt={'Ảnh phát hiện ' + (algoName(a.algo_model) || '')} />
-              : <div className="no">không ảnh</div>}
+              ? <ImgThumb src={img} alt={t('log.detectImg') + ' ' + (algoName(t, a.algo_model) || '')} noImgText={t('log.noImg')} />
+              : <div className="no">{t('log.noImg')}</div>}
             <div className="sc" />
-            <span className="cam">Khu vực: {camLocation}</span>
-            {vid && <div className="tl-play"><span>&#9654;</span></div>}
+            <span className="cam">{t('log.area')}: {camLocation}</span>
+            <div className="tl-play"><span>&#9654;</span></div>
           </div>
 
           <div className="tl-mn">
             <div className="tl-chips">
               <span className="tl-kind" style={{color: col, borderColor: col + '40'}}>
-                {(g?.cat || 'Khác').toUpperCase()}
+                {(g?.cat || t('categories.other')).toUpperCase()}
               </span>
               {eventIdText && <span className="tl-id-badge">{eventIdText}</span>}
-              {isNew && <span className="tl-new">MỚI</span>}
+              {isNew && <span className="tl-new">{t('log.newBadge')}</span>}
             </div>
-            <span className="tl-ttl">{algoName(a.algo_model, a.algo_name) || a.label || '—'}</span>
-            <span className="tl-sub">Khu vực: {camLocation} · IP: {ipText}</span>
+            <span className="tl-ttl">{algoName(t, a.algo_model, a.algo_name) || a.label || '—'}</span>
+            <span className="tl-sub">{t('log.area')}: {camLocation} · IP: {ipText}</span>
           </div>
         </div>
 
@@ -512,49 +556,43 @@ function TlRow({a, isNew, cleared, onSkip, onOpen, onSeen, onClip}) {
           {/* Khung ảnh / avatar nhận diện */}
           <div className={'tl-per-box' + (per?.image ? ' has-img' : ' no-img')}>
             {per?.image ? (
-              <ImgThumb src={absUrl(per.image.startsWith('/') ? per.image : 'alarms/' + per.image)} alt="Ảnh đối tượng" />
+              <ImgThumb src={absUrl(per.image.startsWith('/') ? per.image : 'alarms/' + per.image)} alt="Ảnh đối tượng" noImgText={t('log.noImg')} />
             ) : (
               <div className="tl-no-per">
                 <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                <span>Không nhận diện được</span>
+                <span>{t('log.unrecognized')}</span>
               </div>
             )}
           </div>
 
           {/* Các thông tin text nằm NGOÀI khung ảnh */}
           <div className="tl-per-txt">
-            <div className="tl-per-nm">{per?.name ? per.name.toUpperCase() : 'Không nhận diện được'}</div>
+            <div className="tl-per-nm">{per?.name ? per.name.toUpperCase() : t('log.unrecognized')}</div>
             <div className={'tl-per-sc' + (per?.similarity != null ? ' active' : '')}>
-              {per?.similarity != null ? `Độ chính xác ${per.similarity}%` : 'Chưa có thông tin'}
+              {per?.similarity != null ? `${t('log.similarity')} ${per.similarity}%` : t('log.noInfo')}
             </div>
             <div className="tl-per-badge-blue">
-              {`${a.count || a.objects_count || 1} đối tượng phát hiện`}
+              {`${a.count || a.objects_count || 1} ${t('log.objectsCount')}`}
             </div>
-            <div className={'tl-per-link' + (per?.name ? '' : ' off')}>Chi tiết &rarr;</div>
+            <div className={'tl-per-link' + (per?.name ? '' : ' off')}>{t('log.details')} &rarr;</div>
           </div>
         </div>
 
         {/* Phần 3: Thao tác (Action Buttons) */}
         <div className="tl-sec-3">
           <div className="tl-actions-top">
-            {/* Code gốc nút Bỏ qua:
-            {showSkip && (
-              <button className="tl-btn-opt" onClick={e => { e.stopPropagation(); onSkip(e, cam); }}>
-                Bỏ qua
-              </button>
-            )} */}
             {img && (
               <button className="tl-btn-opt" onClick={e => { e.stopPropagation(); window.open(img, '_blank'); }}>
-                Ảnh gốc
+                {t('log.origImg')}
               </button>
             )}
             {vid && (
               <button className="tl-btn-opt" onClick={e => {
                 e.stopPropagation();
                 onSeen?.(a.event_id);
-                onClip?.(cam, {url: vid, algo: algoName(a.algo_model) || a.label});
+                onClip?.(cam, {url: vid, algo: algoName(t, a.algo_model) || a.label});
               }}>
-                Xem clip
+                {t('log.viewClip')}
               </button>
             )}
           </div>
@@ -565,7 +603,7 @@ function TlRow({a, isNew, cleared, onSkip, onOpen, onSeen, onClip}) {
               onSeen?.(a.event_id);
               onOpen?.(cam);
             }}>
-              Mở camera &rarr;
+              {t('log.openCam')} &rarr;
             </button>
           )}
         </div>
@@ -575,9 +613,9 @@ function TlRow({a, isNew, cleared, onSkip, onOpen, onSeen, onClip}) {
 }
 
 /* <img> bọc trong cấu trúc .tl-th (prepend giống vanilla) — tự xoá khi lỗi. */
-function ImgThumb({src, alt}) {
+function ImgThumb({src, alt, noImgText = 'không ảnh'}) {
   const [err, setErr] = useState(false);
-  if (err) return <div className="no">không ảnh</div>;
+  if (err) return <div className="no">{noImgText}</div>;
   return <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} />;
 }
 

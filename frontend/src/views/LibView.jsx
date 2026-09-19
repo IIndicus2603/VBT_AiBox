@@ -1,5 +1,6 @@
 import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {BASE, pad, post} from '../api/client.js';
+import { useTranslation } from '../i18n/index.jsx';
 
 /**
  * THƯ VIỆN nhận diện — port của ui.js:1752-2224.
@@ -59,8 +60,13 @@ const libDate = s => {
 const libName = x => x.person_name || x.lib_name || ('#' + (x.person_id || x.workclothes_id));
 
 // Box không có máy vi điện tử: dùng chữ "khuôn mặt" / "bộ quần áo" làm mô tả.
-const MODEL = {0: ['Chưa chạy', 'warn'], 1: ['Chưa chạy', 'warn'], 2: ['Đang chạy', 'warn'],
-               3: ['Đã nhận diện', 'ok'], 4: ['Lỗi', 'err']};
+const MODEL = (t) => ({
+  0: [t ? t('lib.statusPending') : 'Chưa chạy', 'warn'],
+  1: [t ? t('lib.statusPending') : 'Chưa chạy', 'warn'],
+  2: [t ? t('lib.statusRunning') : 'Đang chạy', 'warn'],
+  3: [t ? t('lib.statusRecognized') : 'Đã nhận diện', 'ok'],
+  4: [t ? t('lib.statusError') : 'Lỗi', 'err']
+});
 
 // Bỏ dấu văn hoa trước khi khớp: gõ "NGUYEN" vẫn tìm ra "Nguyễn".
 const norm = t => String(t || '').toLowerCase()
@@ -71,11 +77,11 @@ const row = (k, v, cls) => (
 );
 
 const SVG_LIB = 'M4 6.5h16v12H4zM4 10.5h16M9 10.5v8';
-const SVG_REFRESH = 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6';
 const SVG_ADD = 'M12 5v14M5 12h14';
 const SVG_CHEV = 'M6 9l6 6 6-6';
 
 export default function LibView() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('face');        // 'face' | 'ppe'
   const [data, setData] = useState({face: null, ppe: null});
   const [err, setErr] = useState('');
@@ -187,9 +193,9 @@ export default function LibView() {
 
   // Trước đây renderEmpty chỉ null khi busy && !rows.length, nên khi có dữ liệu
   // (rows.length > 0) nó vẫn truthy -> nhánh đầu (lib-empty) luôn thắng, che lưới.
-  const renderEmpty = err ? {t1: 'Không đọc được', t2: err}
+  const renderEmpty = err ? {t1: t('common.noData'), t2: err}
     : rows.length ? null
-    : {t1: 'Thư viện trống', t2: 'Chưa có khuôn nào trong thư viện trên box'};
+    : {t1: t('lib.emptyTitle'), t2: t('lib.emptySub')};
 
   /* ---------------- đóng menu khi bấm ngoài ---------------- */
   useEffect(() => {
@@ -221,7 +227,7 @@ export default function LibView() {
   };
 
   const delLib = async (kind, lb) => {
-    if (!window.confirm('Xóa thư viện "' + lb.lib_name + '"? Mọi mục bên trong cũng bị xóa.\nHành động này không thể hoàn tác.')) return;
+    if (!window.confirm(t('lib.confirmDeleteLib', {name: lb.lib_name}))) return;
     const pre = kind === 'face' ? 'personlib' : 'workclotheslib';
     const body = kind === 'face' ? {lib_id: [lb.lib_id]} : {lib_id: lb.lib_id};
     try {
@@ -264,7 +270,7 @@ export default function LibView() {
     let b64;
     try { b64 = await Promise.all(li.files.map(fileToB64)); }
     catch { return; }
-    setLi({...li, busy: true, msg: 'Đang gửi lên box…'});
+    setLi({...li, busy: true, msg: t('common.loading')});
     try {
       const body = li.kind === 'face'
         ? {person_name: li.name.trim(), image_base64: b64[0], sex: +li.sex, email: '',
@@ -282,7 +288,7 @@ export default function LibView() {
   const delLibItem = async () => {
     if (!ld) return;
     const x = ld.x;
-    if (!window.confirm('Xóa "' + libName(x) + '" khỏi thư viện ' + x.lib_name + '?\nHành động này không thể hoàn tác.')) return;
+    if (!window.confirm(t('lib.confirmDeleteItem', {name: libName(x), lib: x.lib_name}))) return;
     const isFace = ld.kind === 'face';
     const body = isFace ? {person_id_list: [x.person_id]}
       : {lib_id: x.lib_id, workclothes_id_list: [x.workclothes_id]};
@@ -296,14 +302,14 @@ export default function LibView() {
   /* ---------------- render ---------------- */
 
   const modelBadge = m => {
-    const mm = MODEL[m];
+    const mm = MODEL(t)[m];
     return mm ? <span className={'lib-ms ' + mm[1]}>{mm[0]}</span> : null;
   };
 
   const libCard = (x, kind) => {
     const url = libImg(x.image_path);
     return (
-      <div className="lib-card" title={(kind === 'face' ? 'Nhân sự: ' : 'Đồng phục: ') + libName(x)}
+      <div className="lib-card" title={(kind === 'face' ? t('lib.face') + ': ' : t('lib.ppe') + ': ') + libName(x)}
            onClick={() => setLd({x, kind})}>
         <div className="lib-img" style={url ? {backgroundImage: 'url(' + JSON.stringify(url) + ')'} : undefined}>
           {modelBadge(x.modeling_type)}
@@ -318,98 +324,84 @@ export default function LibView() {
     );
   };
 
-  const kindLabel = kind => kind === 'ppe' ? 'Đồng phục' : 'Nhân sự';
+  const kindLabel = kind => kind === 'ppe' ? t('lib.ppe') : t('lib.face');
   const selLibs = (loaded || {}).libs || [];
 
   const libBtnLabel = filterLib && filterKind === tab
-    ? (selLibs.find(l => l.lib_id === filterLib)?.lib_name || 'Thư viện')
+    ? (selLibs.find(l => l.lib_id === filterLib)?.lib_name || t('lib.title'))
     : kindLabel(tab);
 
   return (
     <section className="view" id="v-lib">
       <div className="view-wrap">
-        <div className="bar" style={{gap: 12, flexWrap: 'wrap', marginBottom: 16}}>
-          <span className="view-h" data-i18n="tLib">Thư viện nhận diện</span>
-          <span className="view-sub" id="libCount">{count}</span>
-          <div className="grow" />
-          <div className="tb" style={{gap: 8}}>
-            <div data-glass data-seg className="seg" id="libTabs"
-                 style={{flex: 'none', padding: 4, borderRadius: 14,
-                         background: 'linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%)',
-                         border: '1px solid rgba(213,194,149,.34)',
-                         boxShadow: 'inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)'}}>
-              <button data-lib="face" className={tab === 'face' ? 'on' : ''} data-i18n="libFace"
-                      onClick={() => onTab('face')}>Nhân sự</button>
-              <button data-lib="ppe" className={tab === 'ppe' ? 'on' : ''} data-i18n="libPpe"
-                      onClick={() => onTab('ppe')}>Đồng phục</button>
-            </div>
-            <span className="tb-div" />
-
-            <div className="drop" id="libLibDrop" ref={libRef} style={{position: 'relative', flex: 'none', display: 'flex'}}>
-              <button data-glassbtn id="libLibBtn" style={{height: 36, padding: '0 13px', borderRadius: 14}}
-                      aria-haspopup="true" aria-expanded={String(libMenuOpen)}
-                      onClick={() => setLibMenuOpen(o => !o)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d={SVG_LIB} /></svg>
-                <span id="libLibLbl">{libBtnLabel}</span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11, opacity: .55}}><path d={SVG_CHEV} /></svg>
-              </button>
-              {libMenuOpen && (
-                <div className="menu" id="libLibMenu" data-glass
-                     style={{top: 'calc(100% + 8px)', right: 0, minWidth: 264, borderRadius: 14,
-                             background: 'linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05))',
-                             border: '1px solid rgba(255,255,255,.18)',
-                             boxShadow: '0 16px 34px rgba(0,0,0,.5)'}}>
-                  <div id="libLibList">
-                    {selLibs.map(lb => {
-                      const on = filterLib === lb.lib_id && filterKind === tab;
-                      return (
-                        <div key={lb.lib_id} className={'mrow' + (on ? ' on' : '')}
-                             onClick={() => {
-                               setLibMenuOpen(false);
-                               setFilterLib(lb.lib_id); setFilterKind(tab); setPage(0);
-                             }}>
-                          <span className="dot" style={{background: on ? 'var(--gold)' : 'rgba(255,255,255,.18)'}} />
-                          <span className="l">{lb.lib_name}</span>
-                          <span className="k" />
-                          <span className="mi act" title="Đổi tên"
-                                onClick={ev => { ev.stopPropagation(); setLibMenuOpen(false); openLibNew(tab, lb.lib_id, lb.lib_name); }} />
-                          <span className="mi del" title="Xóa thư viện"
-                                onClick={ev => { ev.stopPropagation(); setLibMenuOpen(false); delLib(tab, lb); }} />
-                        </div>
-                      );
-                    })}
-                    <div className="msep" />
-                    <div className="mrow" onClick={() => { setLibMenuOpen(false); openLibNew(currentKind(), null, ''); }}>
-                      <span className="l">+ Tạo thư viện mới</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <input id="libQ" className="lib-q" type="search" placeholder="Tìm theo tên…"
-                   aria-label="Tìm trong thư viện" autoComplete="off"
-                   ref={inputRef}
-                   value={q}
-                   onChange={e => { setQ(e.target.value); setPage(0); }} />
-
-            <button data-glassbtn id="libAdd" style={{height: 36, padding: '0 14px', borderRadius: 14}}
-                    onClick={openAddItem}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d={SVG_ADD} /></svg>
-              <span>Thêm mục</span>
-            </button>
-            <span className="tb-div" />
-            <button data-glassbtn id="libRefresh" className={busy ? 'spin' : ''}
-                    style={{height: 36, padding: '0 14px', borderRadius: 14}}
-                    onClick={() => loadLibrary(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}><path d={SVG_REFRESH} /></svg>
-              <span data-i18n="refresh">Làm mới</span>
-            </button>
-          </div>
-        </div>
-
         <div className="nosb" style={{flex: 1, minHeight: 0, overflow: 'auto'}}>
           <div className="lib-panel">
+            <div className="lib-tb" style={{display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', width: '100%', marginBottom: 14}}>
+              <div data-glass data-seg className="seg" id="libTabs"
+                   style={{flex: 'none', padding: 4, borderRadius: 14,
+                           background: 'linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%)',
+                           border: '1px solid rgba(213,194,149,.34)',
+                           boxShadow: 'inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)'}}>
+                <button data-lib="face" className={tab === 'face' ? 'on' : ''}
+                        onClick={() => onTab('face')}>{t('lib.face')}</button>
+                <button data-lib="ppe" className={tab === 'ppe' ? 'on' : ''}
+                        onClick={() => onTab('ppe')}>{t('lib.ppe')}</button>
+              </div>
+
+              <div className="drop" id="libLibDrop" ref={libRef} style={{position: 'relative', flex: 'none', display: 'flex'}}>
+                <button data-glassbtn id="libLibBtn" style={{height: 36, padding: '0 13px', borderRadius: 14}}
+                        aria-haspopup="true" aria-expanded={String(libMenuOpen)}
+                        onClick={() => setLibMenuOpen(o => !o)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d={SVG_LIB} /></svg>
+                  <span id="libLibLbl">{libBtnLabel}</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11, opacity: .55}}><path d={SVG_CHEV} /></svg>
+                </button>
+                {libMenuOpen && (
+                  <div className="menu" id="libLibMenu" data-glass
+                       style={{top: 'calc(100% + 8px)', right: 0, minWidth: 264, borderRadius: 14,
+                               background: 'linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05))',
+                               border: '1px solid rgba(255,255,255,.18)',
+                               boxShadow: '0 16px 34px rgba(0,0,0,.5)'}}>
+                    <div id="libLibList">
+                      {selLibs.map(lb => {
+                        const on = filterLib === lb.lib_id && filterKind === tab;
+                        return (
+                          <div key={lb.lib_id} className={'mrow' + (on ? ' on' : '')}
+                               onClick={() => {
+                                 setLibMenuOpen(false);
+                                 setFilterLib(lb.lib_id); setFilterKind(tab); setPage(0);
+                               }}>
+                            <span className="dot" style={{background: on ? 'var(--gold)' : 'rgba(255,255,255,.18)'}} />
+                            <span className="l">{lb.lib_name}</span>
+                            <span className="k" />
+                            <span className="mi act" title={t('common.edit')}
+                                  onClick={ev => { ev.stopPropagation(); setLibMenuOpen(false); openLibNew(tab, lb.lib_id, lb.lib_name); }} />
+                            <span className="mi del" title={t('common.delete')}
+                                  onClick={ev => { ev.stopPropagation(); setLibMenuOpen(false); delLib(tab, lb); }} />
+                          </div>
+                        );
+                      })}
+                      <div className="msep" />
+                      <div className="mrow" onClick={() => { setLibMenuOpen(false); openLibNew(currentKind(), null, ''); }}>
+                        <span className="l">{t('lib.newLib')}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <input id="libQ" className="lib-q" type="search" placeholder={t('lib.searchPlaceholder')}
+                     aria-label={t('common.search')} autoComplete="off"
+                     ref={inputRef}
+                     value={q}
+                     onChange={e => { setQ(e.target.value); setPage(0); }} />
+
+              <button data-glassbtn id="libAdd" style={{height: 36, padding: '0 14px', borderRadius: 14}}
+                      onClick={openAddItem}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}><path d={SVG_ADD} /></svg>
+                <span>{t('lib.addBtn')}</span>
+              </button>
+            </div>
             {renderEmpty && !busy ? (
               <div className="lib-empty" id="libEmpty">
                 <svg viewBox="0 0 24 24" fill="none" stroke="rgba(229,229,234,.4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{width: 30, height: 30}}><path d={SVG_LIB} /></svg>
@@ -417,7 +409,7 @@ export default function LibView() {
                 <span className="t2" id="libEmptyT2">{renderEmpty.t2}</span>
               </div>
             ) : busy && !rows.length ? (
-              <div className="al-load">Đang đọc thư viện từ box…</div>
+              <div className="al-load">{t('lib.loading')}</div>
             ) : (
               <div className="lib-grid" id="libGrid">
                 {shown.map(([x, k]) => <React.Fragment key={k + ':' + (x.person_id || x.workclothes_id)}>{libCard(x, k)}</React.Fragment>)}
@@ -430,13 +422,13 @@ export default function LibView() {
              style={{justifyContent: 'center', paddingTop: 12}}>
           <div className="mid">
             <button className={'pg' + (curPage === 0 ? ' dis' : '')} data-pgctrl data-pg-dir id="libPgPrev"
-                    title="Trang trước" aria-label="Trang trước"
+                    title={t('lib.prevPage')} aria-label={t('lib.prevPage')}
                     onClick={() => { if (curPage > 0) setPage(curPage - 1); }}>‹</button>
             <span className="view-sub" id="libPgInfo">
-              {rows.length ? 'Trang ' + (curPage + 1) + '/' + pages + ' · ' + rows.length + ' mục' : ''}
+              {rows.length ? t('lib.pageInfo', {page: curPage + 1, pages, total: rows.length}) : ''}
             </span>
             <button className={'pg' + (curPage >= pages - 1 ? ' dis' : '')} data-pgctrl data-pg-dir id="libPgNext"
-                    title="Trang sau" aria-label="Trang sau"
+                    title={t('lib.nextPage')} aria-label={t('lib.nextPage')}
                     onClick={() => { if (curPage < pages - 1) setPage(curPage + 1); }}>›</button>
           </div>
         </div>
@@ -450,34 +442,34 @@ export default function LibView() {
                onClick={e => e.stopPropagation()}>
             <div className="m-head" style={{borderBottom: 'none', padding: '17px 18px 0'}}>
               <span className="m-title" id="libNewTitle" style={{flex: 1, minWidth: 0}}>
-                {ln.id ? 'Đổi tên thư viện' : 'Tạo thư viện'}
+                {ln.id ? t('lib.editLib') : t('lib.createLib')}
               </span>
-              <button className="m-x" data-mx id="libNewX" aria-label="Đóng" onClick={() => setLn(null)}>✕</button>
+              <button className="m-x" data-mx id="libNewX" aria-label={t('common.close')} onClick={() => setLn(null)}>✕</button>
             </div>
             <div style={{padding: '13px 18px 4px', display: 'flex', flexDirection: 'column', gap: 12}}>
               {!ln.id && (
                 <div data-seg className="seg" id="libNewKind" style={{alignSelf: 'flex-start'}}>
                   <button data-k="face" className={ln.kind === 'face' ? 'on' : ''}
-                          onClick={() => setLn({...ln, kind: 'face'})}>Nhân sự</button>
+                          onClick={() => setLn({...ln, kind: 'face'})}>{t('lib.face')}</button>
                   <button data-k="ppe" className={ln.kind === 'ppe' ? 'on' : ''}
-                          onClick={() => setLn({...ln, kind: 'ppe'})}>Đồng phục</button>
+                          onClick={() => setLn({...ln, kind: 'ppe'})}>{t('lib.ppe')}</button>
                 </div>
               )}
               <div className="field">
-                <label htmlFor="libNewName">Tên thư viện</label>
-                <input id="libNewName" maxLength="64" autoComplete="off" placeholder="VD: Đồng phục xưởng A"
+                <label htmlFor="libNewName">{t('lib.libNameLabel')}</label>
+                <input id="libNewName" maxLength="64" autoComplete="off" placeholder={t('lib.libNamePlaceholder')}
                        value={ln.name}
                        onChange={e => setLn({...ln, name: e.target.value})}
                        onKeyDown={e => { if (e.key === 'Enter') saveLib(); }} />
                 <span className="hint" id="libNewHint">
-                  {ln.id ? 'Tên mới tối đa 64 ký tự' : 'Tối đa 64 ký tự · trùng tên box báo lỗi 400938'}
+                  {ln.id ? t('lib.max64') : t('lib.max64Hint')}
                 </span>
               </div>
             </div>
             <div className="m-foot" style={{borderTop: 'none', justifyContent: 'flex-end', padding: '16px 18px 18px'}}>
-              <button data-glassbtn id="libNewNo" style={{height: 36, padding: '0 16px'}} onClick={() => setLn(null)}>Hủy</button>
+              <button data-glassbtn id="libNewNo" style={{height: 36, padding: '0 16px'}} onClick={() => setLn(null)}>{t('common.cancel')}</button>
               <button data-goldbtn id="libNewOk" style={{height: 36, padding: '0 18px'}} onClick={saveLib}>
-                {ln.id ? 'Lưu' : 'Tạo'}
+                {ln.id ? t('common.save') : t('common.create')}
               </button>
             </div>
           </div>
@@ -492,26 +484,26 @@ export default function LibView() {
                onClick={e => e.stopPropagation()}>
             <div className="m-head">
               <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5}}>
-                <span className="m-title">Thêm mục vào thư viện</span>
+                <span className="m-title">{t('lib.addModalTitle')}</span>
                 <span className="view-sub" id="liSub">
                   {li.kind === 'face'
-                    ? 'POST /api/v2/person/add · ảnh base64 trong JSON'
-                    : 'POST /api/v2/workclothes/batchadd · tối đa 5 ảnh jpg'}
+                    ? t('lib.addModalFaceSub')
+                    : t('lib.addModalPpeSub')}
                 </span>
               </div>
-              <button className="m-x" data-mx id="liX" aria-label="Đóng" onClick={() => setLi(null)}>✕</button>
+              <button className="m-x" data-mx id="liX" aria-label={t('common.close')} onClick={() => setLi(null)}>✕</button>
             </div>
             <div className="m-body nosb" style={{gridTemplateColumns: '1fr'}}>
               <div className="m-col">
                 <div style={{display: 'flex', gap: 11, flexWrap: 'wrap', alignItems: 'flex-end'}}>
                   <div data-seg className="seg" id="liKind" style={{flex: 'none'}}>
                     <button data-k="face" className={li.kind === 'face' ? 'on' : ''}
-                            onClick={() => setLi({...li, kind: 'face'})}>Nhân sự</button>
+                            onClick={() => setLi({...li, kind: 'face'})}>{t('lib.face')}</button>
                     <button data-k="ppe" className={li.kind === 'ppe' ? 'on' : ''}
-                            onClick={() => setLi({...li, kind: 'ppe'})}>Đồng phục</button>
+                            onClick={() => setLi({...li, kind: 'ppe'})}>{t('lib.ppe')}</button>
                   </div>
                   <div className="field" style={{flex: 1, minWidth: 180}}>
-                    <label htmlFor="liLib">Thư viện</label>
+                    <label htmlFor="liLib">{t('lib.libSelectLabel')}</label>
                     <select id="liLib" value={li.libId}
                             onChange={e => setLi({...li, libId: e.target.value})}>
                       {li.libs.map(l => <option key={l.lib_id} value={l.lib_id}>{l.lib_name}</option>)}
@@ -520,40 +512,40 @@ export default function LibView() {
                 </div>
                 {li.kind === 'face' && (
                   <div className="field" id="liNameF">
-                    <label htmlFor="liName">Tên</label>
-                    <input id="liName" maxLength="64" autoComplete="off" placeholder="VD: Nguyễn Văn A"
+                    <label htmlFor="liName">{t('lib.nameLabel')}</label>
+                    <input id="liName" maxLength="64" autoComplete="off" placeholder={t('lib.namePlaceholder')}
                            value={li.name} onChange={e => setLi({...li, name: e.target.value})} />
                   </div>
                 )}
                 {li.kind === 'face' && (
                   <div style={{display: 'flex', gap: 11, flexWrap: 'wrap'}} id="liFaceF">
                     <div className="field" style={{flex: 1, minWidth: 120}}>
-                      <label htmlFor="liSex">Giới tính</label>
+                      <label htmlFor="liSex">{t('lib.genderLabel')}</label>
                       <select id="liSex" value={li.sex} onChange={e => setLi({...li, sex: e.target.value})}>
-                        <option value="1">Nam</option>
-                        <option value="2">Nữ</option>
-                        <option value="99">Không rõ</option>
+                        <option value="1">{t('lib.male')}</option>
+                        <option value="2">{t('lib.female')}</option>
+                        <option value="99">{t('lib.unknown')}</option>
                       </select>
                     </div>
                     <div className="field" style={{flex: 2, minWidth: 170}}>
-                      <label htmlFor="liIdNo">Số giấy tờ</label>
+                      <label htmlFor="liIdNo">{t('lib.idNoLabel')}</label>
                       <input id="liIdNo" maxLength="127" autoComplete="off"
                              value={li.idNo} onChange={e => setLi({...li, idNo: e.target.value})} />
                     </div>
                     <div className="field" style={{flex: 1, minWidth: 130}}>
-                      <label htmlFor="liTel">Điện thoại</label>
+                      <label htmlFor="liTel">{t('lib.telLabel')}</label>
                       <input id="liTel" maxLength="31" autoComplete="off"
                              value={li.tel} onChange={e => setLi({...li, tel: e.target.value})} />
                     </div>
                   </div>
                 )}
                 <div className="field">
-                  <label htmlFor="liFile">Ảnh</label>
+                  <label htmlFor="liFile">{t('lib.imgLabel')}</label>
                   <input id="liFile" type="file"
                          accept={li.kind === 'face' ? 'image/jpeg,image/png' : 'image/jpeg'}
                          multiple onChange={onPickFiles} />
                   <span className="hint" id="liFileHint">
-                    {li.kind === 'face' ? 'JPG/PNG · ≤5MB mỗi ảnh' : 'Chỉ JPG · ≤5MB · tối đa 5 ảnh'}
+                    {li.kind === 'face' ? t('lib.faceImgHint') : t('lib.ppeImgHint')}
                   </span>
                 </div>
                 <div className="lib-prev" id="liPrev">
@@ -567,8 +559,8 @@ export default function LibView() {
             </div>
             <div className="m-foot" style={{justifyContent: 'flex-end', alignItems: 'center'}}>
               <span className="hint" id="liMsg" style={{flex: 1, minWidth: 0}}>{li.msg}</span>
-              <button data-glassbtn id="liNo" style={{height: 36, padding: '0 16px'}} onClick={() => setLi(null)}>Hủy</button>
-              <button data-goldbtn id="liOk" style={{height: 36, padding: '0 18px'}} onClick={saveAddItem}>Thêm</button>
+              <button data-glassbtn id="liNo" style={{height: 36, padding: '0 16px'}} onClick={() => setLi(null)}>{t('common.cancel')}</button>
+              <button data-goldbtn id="liOk" style={{height: 36, padding: '0 18px'}} onClick={saveAddItem}>{t('common.add')}</button>
             </div>
           </div>
         </div>
@@ -584,40 +576,40 @@ export default function LibView() {
               <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5}}>
                 <span className="m-title" id="ldTitle">{libName(ld.x)}</span>
                 <span className="view-sub" id="ldSub">
-                  {(ld.kind === 'face' ? 'Nhân sự' : 'Đồng phục')
+                  {(ld.kind === 'face' ? t('lib.face') : t('lib.ppe'))
                     + ' · ' + ld.x.lib_name + ' · ' + libDate(ld.x.create_time || 0)}
                 </span>
               </div>
-              <button className="m-x" data-mx id="ldX" aria-label="Đóng" onClick={() => setLd(null)}>✕</button>
+              <button className="m-x" data-mx id="ldX" aria-label={t('common.close')} onClick={() => setLd(null)}>✕</button>
             </div>
             <div className="m-body nosb">
               <div className="ld-img" id="ldImg"
                    style={libImg(ld.x.image_path) ? {backgroundImage: 'url(' + JSON.stringify(libImg(ld.x.image_path)) + ')'} : undefined}>
-                {!libImg(ld.x.image_path) && <span className="msg">Không có ảnh</span>}
+                {!libImg(ld.x.image_path) && <span className="msg">{t('lib.noImg')}</span>}
               </div>
               <div className="m-col" id="ldFields" style={{gap: 7}}>
                 {ld.kind === 'face' ? (
                   <>
-                    {row('Tên', ld.x.person_name || '—')}
-                    {row('Mã', '#' + ld.x.person_id, 'dim')}
-                    {row('Giới tính', ld.x.sex == null || ld.x.sex === 99 ? '—' : (ld.x.sex === 1 ? 'Nam' : 'Nữ'))}
-                    {row('Điện thoại', ld.x.tel || '—')}
+                    {row(t('lib.nameLabel'), ld.x.person_name || '—')}
+                    {row(t('lib.codeLabel'), '#' + ld.x.person_id, 'dim')}
+                    {row(t('lib.genderLabel'), ld.x.sex == null || ld.x.sex === 99 ? '—' : (ld.x.sex === 1 ? t('lib.male') : t('lib.female')))}
+                    {row(t('lib.telLabel'), ld.x.tel || '—')}
                     {row('Email', ld.x.email || '—')}
-                    {row('Số giấy tờ', ld.x.certificate_no || '—')}
+                    {row(t('lib.idNoLabel'), ld.x.certificate_no || '—')}
                   </>
                 ) : (
                   <>
-                    {row('Thư viện', ld.x.lib_name || '—')}
-                    {row('Mã', '#' + ld.x.workclothes_id, 'dim')}
-                    {row('Ngày thêm', libDate(ld.x.create_time) || '—')}
+                    {row(t('lib.libNameLabel'), ld.x.lib_name || '—')}
+                    {row(t('lib.codeLabel'), '#' + ld.x.workclothes_id, 'dim')}
+                    {row(t('lib.addedDateLabel'), libDate(ld.x.create_time) || '—')}
                   </>
                 )}
-                {modelBadge(ld.x.modeling_type) && row('Trạng thái', modelBadge(ld.x.modeling_type), '')}
+                {modelBadge(ld.x.modeling_type) && row(t('lib.statusLabel'), modelBadge(ld.x.modeling_type), '')}
               </div>
             </div>
             <div className="m-foot" style={{justifyContent: 'flex-end'}}>
-              <button data-glassbtn id="ldNo" style={{height: 36, padding: '0 16px'}} onClick={() => setLd(null)}>Đóng</button>
-              <button data-redbtn id="ldDel" style={{height: 36, padding: '0 16px'}} onClick={delLibItem}>Xóa mục</button>
+              <button data-glassbtn id="ldNo" style={{height: 36, padding: '0 16px'}} onClick={() => setLd(null)}>{t('common.close')}</button>
+              <button data-redbtn id="ldDel" style={{height: 36, padding: '0 16px'}} onClick={delLibItem}>{t('lib.deleteItem')}</button>
             </div>
           </div>
         </div>

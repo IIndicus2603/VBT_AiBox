@@ -1,6 +1,7 @@
 import React, {useRef, useState} from 'react';
 import {useVideoStream} from '../hooks/useVideoStream.js';
 import {G, mask, nice} from '../api/client.js';
+import {useTranslation} from '../i18n/index.jsx';
 
 /* Port của makeTile/paintTile/tileState/statusOf/codecLine/metaOf/noteOf
    (app.js:90-226). Mỗi tile = 1 <video> (do useVideoStream quản lý bên trong một
@@ -8,11 +9,11 @@ import {G, mask, nice} from '../api/client.js';
    Dùng đúng class CSS từ style.css: .tile .t-top .t-id .t-name .t-code
    .badge(.live/.off/.wait) .t-area .t-bot .t-meta .t-note .scan + data-edge. */
 
-const statusOf = state => {
-  if (state === 'live') return {cls: '', txt: 'LIVE'};
-  if (state === 'down') return {cls: 'off', txt: 'OFFLINE'};
-  if (state === 'pause') return {cls: 'wait', txt: 'TẠM DỪNG'};
-  return {cls: 'wait', txt: 'ĐANG KẾT NỐI'};
+const statusOf = (t, state) => {
+  if (state === 'live') return {cls: '', txt: t('live.stLive')};
+  if (state === 'down') return {cls: 'off', txt: t('live.stOffline')};
+  if (state === 'pause') return {cls: 'wait', txt: t('live.stPause')};
+  return {cls: 'wait', txt: t('live.stConnecting')};
 };
 
 export default function VideoTile({
@@ -26,6 +27,7 @@ export default function VideoTile({
   onFullscreen,
   onMute,
 }) {
+  const {t} = useTranslation();
   const [state, setState] = useState('wait');
   const [err, setErr] = useState(null);
   const [muted, setMuted] = useState(false);
@@ -41,11 +43,11 @@ export default function VideoTile({
     },
   );
 
-  const st = statusOf(state);
+  const st = statusOf(t, state);
   const isDown = state === 'down';
   const displayNote = isDown
-    ? (err ? String(err).slice(0, 42) : 'Mất kết nối')
-    : (state === 'pause' ? 'ngoài vùng nhìn'
+    ? (err ? String(err).slice(0, 42) : t('live.disconnected'))
+    : (state === 'pause' ? t('live.outOfView')
       : [bpsMbps ? bpsMbps.toFixed(1) + ' Mbps' : null, nice(codecLine)].filter(Boolean).join(' · '));
 
   const toggleMute = e => {
@@ -71,7 +73,7 @@ export default function VideoTile({
       <div className="t-top">
         <div className="t-id">
           <div className="t-name">{name}</div>
-          <div className="t-code">{codecLine || 'chưa có codec'}</div>
+          <div className="t-code">{codecLine || t('live.noCodec')}</div>
         </div>
         <span className={'badge ' + st.cls}><span className="t">{st.txt}</span></span>
       </div>

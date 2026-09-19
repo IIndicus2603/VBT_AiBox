@@ -1,6 +1,7 @@
 import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {createPortal} from 'react-dom';
 import {BASE, jget, post} from '../api/client.js';
+import { useTranslation } from '../i18n/index.jsx';
 
 /**
  * SearchView — "Tìm kiếm nâng cao" (port index.html #v-search + ui.js search section).
@@ -99,24 +100,87 @@ const ALGO_VI = {
   TrafficParameters: 'Thông số giao thông',
   TrafficParameter: 'Thông số giao thông',
 };
-const algoName = (m, fromBox) => fromBox || ALGO_VI[m] || m;
+const algoName = (t, m, fromBox) => {
+  if (fromBox) return fromBox;
+  const tr = t?.('algos.' + m);
+  if (tr && tr !== ('algos.' + m)) return tr;
+  return ALGO_VI[m] || m;
+};
+
+// Dải số trang cho pager: tối đa 7 ô, luôn giữ trang 1 / trang cuối, chèn '…'
+// khi bị ngắt (122 trang -> "1 … 59 60 61 … 122").
+const pageWindow = (cur, n) => {
+  if (n <= 7) return Array.from({length: n}, (_, i) => i + 1);
+  const a = Math.max(2, Math.min(cur - 1, n - 4));
+  const b = Math.min(n - 1, Math.max(cur + 1, 5));
+  const out = [1];
+  if (a > 2) out.push('…');
+  for (let i = a; i <= b; i++) out.push(i);
+  if (b < n - 1) out.push('…');
+  out.push(n);
+  return out;
+};
 
 // ---- Bảng hằng (port ui.js:2327-2341).
 // status: 0=Unhandled, 1=True Alarm, 2=False Alarm, 3=Irrelevant (box enum).
-const SRC_STATUS = [['0', 'Unhandled'], ['1', 'True Alarm'], ['2', 'False Alarm'], ['3', 'Irrelevant']];
+const SRC_STATUS = (t) => [
+  ['0', t ? t('search.statusUnhandled') : 'Unhandled'],
+  ['1', t ? t('search.statusTrueAlarm') : 'True Alarm'],
+  ['2', t ? t('search.statusFalseAlarm') : 'False Alarm'],
+  ['3', t ? t('search.statusIrrelevant') : 'Irrelevant']
+];
 const SRC_ENDPOINT = {behavior: 'search/behavior', face: 'search/facecap'};
-// object_type: 1=Người, 2/3=phương tiện. 0 = chưa phân loại -> hiện "Người".
-const SRC_OBJ = {0: 'Người', 1: 'Người', 2: 'Phương tiện có động cơ', 3: 'Phương tiện không động cơ'};
-const SRC_FOBJ = [[1, 'Người'], [2, 'Phương tiện có động cơ'], [3, 'Phương tiện không động cơ']];
-const SRC_FGENDER = [['0', 'All'], ['1', 'Male'], ['2', 'Female'], ['3', 'Unknown']];
-const SRC_FAGE = [['0', 'All'], ['1', 'Child'], ['2', 'Juvenile'], ['3', 'Teenager'], ['4', 'Middle age'], ['5', 'Senior']];
-const SRC_FGLASSES = [['0', 'All'], ['1', 'Yes'], ['2', 'No']];
-const SRC_FMASK = [['0', 'All'], ['1', 'Yes'], ['2', 'No']];
+const SRC_OBJ = (t) => ({
+  0: t ? t('search.objPerson') : 'Người',
+  1: t ? t('search.objPerson') : 'Người',
+  2: t ? t('search.objMotorVehicle') : 'Phương tiện có động cơ',
+  3: t ? t('search.objNonMotorVehicle') : 'Phương tiện không động cơ'
+});
+const SRC_FOBJ = (t) => [
+  [1, t ? t('search.objPerson') : 'Người'],
+  [2, t ? t('search.objMotorVehicle') : 'Phương tiện có động cơ'],
+  [3, t ? t('search.objNonMotorVehicle') : 'Phương tiện không động cơ']
+];
+const SRC_FGENDER = (t) => [
+  ['0', t ? t('search.genderAll') : 'All'],
+  ['1', t ? t('search.genderMale') : 'Male'],
+  ['2', t ? t('search.genderFemale') : 'Female'],
+  ['3', t ? t('search.genderUnknown') : 'Unknown']
+];
+const SRC_FAGE = (t) => [
+  ['0', t ? t('search.ageAll') : 'All'],
+  ['1', t ? t('search.ageChild') : 'Child'],
+  ['2', t ? t('search.ageJuvenile') : 'Juvenile'],
+  ['3', t ? t('search.ageTeenager') : 'Teenager'],
+  ['4', t ? t('search.ageMiddleAge') : 'Middle age'],
+  ['5', t ? t('search.ageSenior') : 'Senior']
+];
+const SRC_FGLASSES = (t) => [
+  ['0', t ? t('search.glassesAll') : 'All'],
+  ['1', t ? t('search.glassesYes') : 'Yes'],
+  ['2', t ? t('search.glassesNo') : 'No']
+];
+const SRC_FMASK = (t) => [
+  ['0', t ? t('search.maskAll') : 'All'],
+  ['1', t ? t('search.maskYes') : 'Yes'],
+  ['2', t ? t('search.maskNo') : 'No']
+];
 
 // ---- Helpers.
 const dtLocal = d => {
   const p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+// Lịch 24h cho ô Từ/Đến: native datetime-local theo locale trình duyệt nên có thể
+// hiện AM/PM; ta tự render text "YYYY-MM-DD HH:mm:ss" cố định 24h + picker riêng.
+const dtToText = v => v ? v.replace('T', ' ') : '';
+const dtFromText = t => {              // "YYYY-MM-DD HH:mm:ss" -> "YYYY-MM-DDTHH:mm:ss"
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(String(t || '').trim());
+  return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}` : null;
+};
+const dtParse = v => {                 // giá trị "YYYY-MM-DDTHH:mm:ss" -> Date local
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(String(v || ''));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
 };
 const srcPic = x => libImg(x.big_picture_url || x.small_picture_url);
 const libImg = p => {
@@ -125,13 +189,13 @@ const libImg = p => {
 };
 const fmtTime = t => {
   const d = t ? new Date(t * 1000) : null;
-  return d && !isNaN(d) ? d.toLocaleString('vi-VN') : '';
+  return d && !isNaN(d) ? d.toLocaleString() : '';
 };
 
 /** Dropdown bấm mở (Camera/Loại alarm/Đối tượng/Kết quả xử lý = nhiều lựa chọn;
  *  Match/Gender/Age/Glasses/Mask = một lựa chọn). Panel position:fixed -> không bị
  *  .view-wrap cắt. `open` của mỗi drop thì đóng các drop khác. */
-function SrcDrop({id, opts, single, openId, onToggle, onChange, init}) {
+function SrcDrop({id, opts, single, openId, onToggle, onChange, init, allLabel = 'Tất cả', selectedLabel = 'đã chọn'}) {
   const [state, setState] = useState(() => new Set(opts.map(o => String(o.value))));
   const [sval, setSval] = useState(single ? String(opts[0]?.value) : null);
   const [open, setOpen] = useState(false);
@@ -219,7 +283,7 @@ function SrcDrop({id, opts, single, openId, onToggle, onChange, init}) {
 
   const label = single
     ? (opts.find(o => String(o.value) === sval) || {}).label || ''
-    : (state.size === n ? `Tất cả (${n})` : `${state.size} đã chọn`);
+    : (state.size === n ? `${allLabel} (${n})` : `${state.size} ${selectedLabel}`);
 
   const setAll = v => {
     const next = new Set();
@@ -260,7 +324,7 @@ function SrcDrop({id, opts, single, openId, onToggle, onChange, init}) {
                 checked={state.size === n}
                 onChange={e => setAll(e.target.checked)}
               />
-              <span>Tất cả ({n})</span>
+              <span>{allLabel} ({n})</span>
             </label>
           )}
           {opts.map(o => {
@@ -293,6 +357,122 @@ function SrcDrop({id, opts, single, openId, onToggle, onChange, init}) {
   );
 }
 
+/** Ô ngày-giờ 24h (không AM/PM) cho Từ/Đến: text "YYYY-MM-DD HH:mm:ss" + popover
+ *  date picker (native, không AM/PM) + 3 select giờ/phút/giây 24h. */
+function DTInput({id, value, onChange}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(dtToText(value));
+  const rootRef = useRef(null);
+  const panelRef = useRef(null);
+
+  // value đổi từ ngoài (mặc định 00:00 / 23:59:59 khi nạp camera) -> đồng bộ text
+  useEffect(() => { setText(dtToText(value)); }, [value]);
+
+  // popover nằm cố định + bấm ngoài thì đóng (panel nối vào body để khỏi bị .view-wrap cắt)
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = e => {
+      if (rootRef.current && rootRef.current.contains(e.target)) return;
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('click', onDoc);
+    return () => document.removeEventListener('click', onDoc);
+  }, [open]);
+
+  // đặt vị trí cố định sát trigger (đóng xuống hoặc lên khi dưới hết chỗ)
+  useEffect(() => {
+    if (!open) return undefined;
+    const pos = () => {
+      const r = rootRef.current && rootRef.current.getBoundingClientRect();
+      const panel = panelRef.current;
+      if (!r || !panel) return;
+      const estH = panel.scrollHeight || 150;
+      const openUp = (r.bottom + estH > window.innerHeight) && (r.top - estH > 8);
+      panel.style.left = Math.min(r.left, window.innerWidth - 230) + 'px';
+      if (openUp) {
+        panel.style.top = 'auto';
+        panel.style.bottom = (window.innerHeight - r.top + 6) + 'px';
+      } else {
+        panel.style.bottom = 'auto';
+        panel.style.top = (r.bottom + 6) + 'px';
+      }
+    };
+    pos();
+    window.addEventListener('resize', pos);
+    return () => window.removeEventListener('resize', pos);
+  }, [open]);
+
+  const d = dtParse(value);
+  const yy = d ? d.getFullYear() : new Date().getFullYear();
+  const mm = d ? d.getMonth() : new Date().getMonth();
+  const dd = d ? d.getDate() : new Date().getDate();
+  const hh = d ? d.getHours() : 0;
+  const mi = d ? d.getMinutes() : 0;
+  const ss = d ? d.getSeconds() : 0;
+  const p = n => String(n).padStart(2, '0');
+
+  const build = (y, mo, day, h, m, s) =>
+    dtLocal(new Date(y, mo, day, h, m, s));
+
+  const setPart = (part, val) => {
+    const num = +val;
+    let next;
+    if (part === 'date') {
+      const [Y, M, D] = val.split('-').map(Number);
+      next = build(Y, M - 1, D, hh, mi, ss);
+    } else if (part === 'h') next = build(yy, mm, dd, num, mi, ss);
+    else if (part === 'm') next = build(yy, mm, dd, hh, num, ss);
+    else next = build(yy, mm, dd, hh, mi, num);
+    onChange(next);
+    setText(dtToText(next));
+  };
+
+  return (
+    <div className={'dt-inp' + (open ? ' open' : '')} id={id} ref={rootRef}>
+      <input
+        type="text"
+        className="dt-text"
+        value={text}
+        placeholder="YYYY-MM-DD HH:mm:ss"
+        onClick={e => { e.stopPropagation(); setOpen(true); }}
+        onChange={e => {
+          const t = e.target.value;
+          setText(t);
+          const v = dtFromText(t);
+          if (v) onChange(v);
+        }}
+      />
+      <button type="button" className="dt-caret" tabIndex={-1}
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}>▾</button>
+      {open && createPortal(
+        <div className="dt-panel" ref={panelRef} style={{position: 'fixed', zIndex: 1000}}
+          onClick={e => e.stopPropagation()}>
+          <input
+            type="date"
+            value={`${yy}-${p(mm + 1)}-${p(dd)}`}
+            onChange={e => e.target.value && setPart('date', e.target.value)}
+          />
+          <div className="dt-row">
+            <select value={hh} onChange={e => setPart('h', e.target.value)}>
+              {Array.from({length: 24}, (_, i) => <option key={i} value={i}>{p(i)}</option>)}
+            </select>
+            <span>:</span>
+            <select value={mi} onChange={e => setPart('m', e.target.value)}>
+              {Array.from({length: 60}, (_, i) => <option key={i} value={i}>{p(i)}</option>)}
+            </select>
+            <span>:</span>
+            <select value={ss} onChange={e => setPart('s', e.target.value)}>
+              {Array.from({length: 60}, (_, i) => <option key={i} value={i}>{p(i)}</option>)}
+            </select>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 /** Toast nhỏ trong view (port toast của vanilla — tự chứa, không đụng shared). */
 function useToast() {
   const [t, setT] = useState(null);
@@ -308,6 +488,7 @@ function useToast() {
 }
 
 export default function SearchView() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState('behavior');       // 'behavior' | 'face'
   const [view, setView] = useState('grid');          // 'grid' | 'list'
   const [cams, setCams] = useState([]);              // [{id, name}]
@@ -323,7 +504,7 @@ export default function SearchView() {
   const [busy, setBusy] = useState(false);           // delete/export đang chạy
   const [modal, setModal] = useState(null);          // {mode:'view'|'edit', row}
   const [showExport, setShowExport] = useState(false);
-  const [expStatus, setExpStatus] = useState('Chưa bắt đầu');
+  const [expStatus, setExpStatus] = useState(t('search.statusNotStarted'));
   const [expType, setExpType] = useState('page');
   const [expImg, setExpImg] = useState('1');
   const [expVid, setExpVid] = useState('1');
@@ -331,7 +512,6 @@ export default function SearchView() {
   const [toVal, setToVal] = useState('');
   const [fName, setFName] = useState('');
   const [fId, setFId] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -369,7 +549,7 @@ export default function SearchView() {
         const sup = ((aj.data || {}).loaded || [])
           .filter(a => a !== 'AreaRuleData')
           .map(a => {
-            const vi = algoName(a);
+            const vi = algoName(t, a);
             // Nhãn như box: "EnterArea - Vào vùng". Bỏ lặp khi không có tên VN.
             const label = vi && vi !== a ? `${a} - ${vi}` : a;
             return {id: a, name: label};
@@ -380,7 +560,7 @@ export default function SearchView() {
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [t]);
 
   // mặc định: full ngày hôm nay (từ 00:00 → bây giờ) khi có camera — như box
   useEffect(() => {
@@ -396,10 +576,13 @@ export default function SearchView() {
   const srcBuildQuery = (pg) => {
     const d = dropRef.current;
     const camsVal = (d.cams?.getVals?.() || []).map(Number).filter(n => !isNaN(n));
-    const now = Math.floor(Date.now() / 1000);
     const p2s = v => (v ? Math.floor(new Date(v).getTime() / 1000) : 0);
-    let st = p2s(fromVal) || now - 3600;
-    let et = p2s(toVal) || now;
+    // Fallback khi ô trống: mặc định full ngày hôm nay 00:00:00 → 23:59:59
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    let st = p2s(fromVal) || Math.floor(dayStart.getTime() / 1000);
+    let et = p2s(toVal) || Math.floor(dayEnd.getTime() / 1000);
     if (et <= st) et = st + 3600;
     if (!camsVal.length) return null;
     const handle_status = (d.st?.getVals?.() || []).map(Number);
@@ -421,10 +604,6 @@ export default function SearchView() {
   };
 
   // adapter mock: /api/alarms -> row dạng search (nếu box không trả search).
-  // Lọc bỏ alarm rác (keepalive / thiếu event_id, channel_id) để khỏi lòi
-  // "mock-N" / "CHnull" ra lưới — những dòng ấy là alarm type 6 không có dữ liệu.
-  // Tôn trọng query (thời gian + camera + phân trang) như box search thật, để
-  // fallback không phải lúc nào cũng trả 10 alarm mới nhất. Trả {list, total}.
   const mockFallbackRows = async q => {
     try {
       const j = await jget(BASE + 'api/alarms', 6000);
@@ -463,7 +642,7 @@ export default function SearchView() {
 
   const loadSearch = useCallback(async (qOverride, pg) => {
     const q = qOverride || srcBuildQuery(pg);
-    if (!q) { toastShow('CHÚ Ý', 'Chọn ít nhất 1 camera'); return; }
+    if (!q) { toastShow(t('common.warning'), t('search.selectAtLeastOneCam')); return; }
     if (pg) setPage(pg);
     qRef.current = q;
     setSel(new Set());
@@ -472,44 +651,35 @@ export default function SearchView() {
       let data = await post(SRC_ENDPOINT[tab], q);
       let list = (data || {}).list || [];
       if (!data || typeof data.total === 'undefined') {
-        // search không phản hồi theo schema (mock) — rơi về /api/alarms
         const fb = await mockFallbackRows(q);
         list = fb.list;
         setTotal(fb.total);
       } else {
         setTotal((data.total) || 0);
       }
-      // Không tin thứ tự box trả về — luôn sắp mới nhất trước theo capture_time
-      // (box có thể trả lẫn lộn khi mạng không ổn định / có gap thời gian).
       list = [...list].sort((a, b) => (b.capture_time || 0) - (a.capture_time || 0));
       setRows(list);
     } catch (e) {
       const fb = await mockFallbackRows(q);
       setRows(fb.list);
       setTotal(fb.total);
-      if (!fb.list.length) toastShow('LỖI', 'Tìm kiếm thất bại: ' + (e.message || ''));
+      if (!fb.list.length) toastShow(t('common.error'), t('search.searchFailed') + ': ' + (e.message || ''));
     } finally {
       setSearching(false);
     }
-  }, [tab, page, fromVal, toVal, fName, fId]);
+  }, [tab, page, fromVal, toVal, fName, fId, t]);
 
   // tự tìm ngay khi mở lần đầu
   const didInit = useRef(false);
   useEffect(() => {
     if (didInit.current) return;
     if (!cams.length) return;
-    // Chờ from/to mặc định (00:00:00 → 23:59:59) được set rồi mới tìm — nếu tìm
-    // ngay, state chưa cập nhật nên query rơi về "1h gần nhất" thay vì cả ngày.
     if (!fromVal || !toVal) return;
     didInit.current = true;
     loadSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cams.length, fromVal, toVal]);
 
-  // Đổi tab: KHÔNG gọi loadSearch ngay tại onClick. loadSearch là useCallback theo
-  // [tab], gọi liền sau setTab() sẽ chạy closure của render CŨ -> đánh vào endpoint
-  // + body của tab cũ, nên kết quả tab trước vẫn nằm lại. Ở đây chỉ xoá kết quả cũ;
-  // effect dưới mới tìm lại bằng tab MỚI.
   const onTab = k => {
     if (tab === k) return;
     setTab(k);
@@ -521,15 +691,20 @@ export default function SearchView() {
 
   const tabRef = useRef(tab);
   useEffect(() => {
-    if (tabRef.current === tab) return;   // lần mount đầu, không phải đổi tab
+    if (tabRef.current === tab) return;
     tabRef.current = tab;
-    if (!qRef.current) return;            // chưa từng tìm thì khỏi tìm
+    if (!qRef.current) return;
     loadSearch(null, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const pages = Math.max(1, Math.ceil(total / pagesize));
   const curPage = Math.min(page, pages);
+  const goPage = p => {
+    if (p < 1 || p > pages || p === curPage) return;
+    setPage(p);
+    loadSearch({...qRef.current, page: p});
+  };
 
   const onSelectCard = id => {
     setSel(prev => {
@@ -551,8 +726,8 @@ export default function SearchView() {
 
   const onDelete = async () => {
     const ids = [...sel];
-    if (!ids.length) { toastShow('CHÚ Ý', 'Chọn ít nhất 1 alarm để xóa'); return; }
-    if (!window.confirm(`Xóa ${ids.length} alarm đã chọn?`)) return;
+    if (!ids.length) { toastShow(t('common.warning'), t('search.selectAtLeastOneAlarm')); return; }
+    if (!window.confirm(t('search.confirmDeleteSelected', {count: ids.length}))) return;
     setDeleting(true);
     try {
       const qry = {QueryInfos: [{QryType: 201, QryCondition: 7, QryData: ids.join(',')}], Num: ids.length};
@@ -561,11 +736,11 @@ export default function SearchView() {
         body: JSON.stringify(qry), signal: AbortSignal.timeout(25000),
       })).json();
       if (r.status_code !== 0 && r.code !== 0) throw new Error(r.msg || 'code ' + r.status_code);
-      toastShow('OK', `Đã xóa ${ids.length} alarm`);
+      toastShow('OK', t('search.deletedCount', {count: ids.length}));
       setSel(new Set());
       if (qRef.current) loadSearch(qRef.current);
     } catch (e) {
-      toastShow('LỖI', 'Xóa thất bại: ' + e.message);
+      toastShow(t('common.error'), t('search.deleteFailed') + ': ' + e.message);
     } finally {
       setDeleting(false);
     }
@@ -573,10 +748,10 @@ export default function SearchView() {
 
   // export polling
   const onExport = async () => {
-    if (expType === 'sel' && !sel.size) { toastShow('CHÚ Ý', 'Chọn ít nhất 1 alarm để export'); return; }
-    if (expType === 'page' && !rowsRef.current.length) { toastShow('CHÚ Ý', 'Không có kết quả để export'); return; }
+    if (expType === 'sel' && !sel.size) { toastShow(t('common.warning'), t('search.selectAtLeastOneAlarm')); return; }
+    if (expType === 'page' && !rowsRef.current.length) { toastShow(t('common.warning'), t('search.noResultsToExport')); return; }
     setShowExport(true);
-    setExpStatus('Chưa bắt đầu');
+    setExpStatus(t('search.statusNotStarted'));
   };
 
   const onExportGo = async () => {
@@ -593,18 +768,18 @@ export default function SearchView() {
       .sort((a, b) => b - a);
     body.pagesize = body.AlarmID.length;
     try {
-      setExpStatus('Đang gửi yêu cầu xuất…');
+      setExpStatus(t('search.statusSending'));
       await post('search/export', body);
       let url = null;
       for (let i = 0; i < 30; i++) {
         const p = await (await fetch(BASE + 'aibox/export/progress')).json();
         const d = (p.data || {});
         if (d.ExportStatus === 0 && d.URL) { url = d.URL; break; }
-        setExpStatus(`Đang xuất… (${i + 1}/30)`);
+        setExpStatus(`${t('search.statusExporting')} (${i + 1}/30)`);
         await new Promise(res => setTimeout(res, 2000));
       }
       if (!url) throw new Error('box không tạo được file export');
-      setExpStatus('Đang tải file…');
+      setExpStatus(t('search.statusDownloading'));
       const href = url.startsWith('http') ? url : (BASE + url.replace(/^\//, ''));
       const m = /([^/?#]+)(?:\?|#|$)/.exec(url);
       const fn = m ? m[1] : `export-${tab}.tar`;
@@ -612,174 +787,147 @@ export default function SearchView() {
       const a = document.createElement('a');
       a.href = href; a.download = dl;
       document.body.appendChild(a); a.click(); a.remove();
-      toastShow('OK', 'Export xong, đã tải file');
+      toastShow('OK', t('search.exportSuccess'));
       setShowExport(false);
-      setExpStatus('Chưa bắt đầu');
+      setExpStatus(t('search.statusNotStarted'));
     } catch (e) {
       setExpStatus('');
-      toastShow('LỖI', 'Export thất bại: ' + e.message);
+      toastShow(t('common.error'), t('search.exportFailed') + ': ' + e.message);
     } finally {
       setExporting(false);
     }
   };
 
-  const closeExport = () => { setShowExport(false); setExpStatus('Chưa bắt đầu'); };
+  const closeExport = () => { setShowExport(false); setExpStatus(t('search.statusNotStarted')); };
 
-  // clip alarm: parse RTSP replay -> /aibox/video
   const playClip = async x => {
     const m = /\/c(\d+)\/b(\d+)\/e(\d+)/.exec(x.video_url || '');
-    if (!m) { toastShow('CHÚ Ý', 'Alarm này không có clip'); return; }
+    if (!m) { toastShow(t('common.warning'), t('search.noClipAvailable')); return; }
     const url = `${BASE}aibox/video?ChlId=${m[1]}&StartTime=${m[2]}&EndTime=${m[3]}`;
     try {
       const blob = await (await fetch(url, {signal: AbortSignal.timeout(30000)})).blob();
       if (!blob || !blob.size) throw new Error('box không trả clip');
       window.__searchClip = URL.createObjectURL(blob);
-      // mở video trong modal chi tiết
       setModal({mode: 'clip', row: x});
     } catch (e) {
-      toastShow('LỖI', 'Không tải được clip: ' + e.message);
+      toastShow(t('common.error'), t('search.clipLoadFailed') + ': ' + e.message);
     }
   };
 
-  const EXP_TYPE_LBL = {page: 'Trang hiện tại', sel: 'Các mục đã chọn'};
-  const EXP_YN_LBL = {'1': 'Có', '0': 'Không'};
+  const EXP_TYPE_LBL = {page: t('search.exportThisPage'), sel: t('search.exportSelected')};
+  const EXP_YN_LBL = {'1': t('search.yes'), '0': t('search.no')};
 
   // ---------- Render ----------
   return (
     <section className="view" id="v-search">
       <div className="view-wrap" style={{padding: '18px'}}>
-        {/* header + subtab */}
-        <div className="bar" style={{gap: 12, flexWrap: 'wrap', marginBottom: 14}}>
-          <span className="view-h" data-i18n="tSearch">Tìm kiếm nâng cao</span>
-          <span className="view-sub" id="searchSub" data-i18n="tSearchSub">Tìm alarm theo camera, loại và thời gian</span>
-          <div className="grow" />
-          <div data-glass data-seg className="seg" id="srcTabs" style={{flex: 'none', padding: 4, borderRadius: 14,
-            background: 'linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%)',
-            border: '1px solid rgba(213,194,149,.34)',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)'}}>
-            <button data-src-tab="behavior" className={tab === 'behavior' ? 'on' : ''}
-                    onClick={() => onTab('behavior')}>Behavioral Data</button>
-            <button data-src-tab="face" className={tab === 'face' ? 'on' : ''}
-                    onClick={() => onTab('face')}>Face Data</button>
-          </div>
-          <div className="tb" style={{gap: 8}}>
-            <button data-glassbtn id="searchRefresh" style={{height: 36, padding: '0 14px', borderRadius: 14}}
-              disabled={refreshing || searching} onClick={() => { if (qRef.current) { setRefreshing(true); loadSearch().finally(() => setRefreshing(false)); } }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
-                <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
-              </svg>
-              <span data-i18n="refresh">Làm mới</span>
-            </button>
-          </div>
-        </div>
-
         {/* Thanh lọc */}
         <div className="lib-panel" id="srcFilterPanel" style={{marginBottom: 14, padding: '14px 16px', minHeight: 0, alignSelf: 'flex-start', width: '100%'}}>
-          <div style={{display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end'}}>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Camera</span>
-              <SrcDrop id="cams" opts={cams.map(c => ({value: String(c.id), label: c.name}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
+          <div className="src-head">
+            <div data-glass data-seg className="seg" id="srcTabs" style={{flex: 'none', padding: 4, borderRadius: 14,
+              background: 'linear-gradient(168deg,rgba(255,255,255,.10) 0%,rgba(213,194,149,.12) 48%,rgba(213,194,149,.20) 100%)',
+              border: '1px solid rgba(213,194,149,.34)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,.30),0 8px 22px rgba(0,0,0,.35)'}}>
+              <button data-src-tab="behavior" className={tab === 'behavior' ? 'on' : ''}
+                      onClick={() => onTab('behavior')}>{t('search.tabBehavior')}</button>
+              <button data-src-tab="face" className={tab === 'face' ? 'on' : ''}
+                      onClick={() => onTab('face')}>{t('search.tabFace')}</button>
             </div>
-            {/* behavior-only: Loại alarm + Đối tượng — nằm chung hàng, sau Camera */}
-            <div style={{display: tab === 'behavior' ? 'flex' : 'none', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Loại alarm</span>
-              <SrcDrop id="algos" opts={algos.map(a => ({value: a.id, label: a.name}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-            <div style={{display: tab === 'behavior' ? 'flex' : 'none', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Đối tượng</span>
-              <SrcDrop id="obj" opts={SRC_FOBJ.map(([v, l]) => ({value: String(v), label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 90}}>
-              <span className="view-sub">Kết quả xử lý</span>
-              <SrcDrop id="st" opts={SRC_STATUS.map(([v, l]) => ({value: v, label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, flex: '0 1 160px', minWidth: 120}}>
-              <span className="view-sub">Từ</span>
-              <input type="datetime-local" id="searchFrom" step="1" value={fromVal} onChange={e => setFromVal(e.target.value)}
-                style={{height: 38, width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 8px'}} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, flex: '0 1 160px', minWidth: 120}}>
-              <span className="view-sub">Đến</span>
-              <input type="datetime-local" id="searchTo" step="1" value={toVal} onChange={e => setToVal(e.target.value)}
-                style={{height: 38, width: '100%', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 8px'}} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 80}}>
-              <span className="view-sub">Match</span>
-              <SrcDrop id="match" single opts={[['999', 'All'], ['1', 'Match'], ['2', 'Not Match']].map(([v, l]) => ({value: v, label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-            <button data-glassbtn id="searchGo" style={{height: 38, padding: '0 20px', borderRadius: 14}}
-              onClick={() => loadSearch(null, 1)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
-                <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M21 21l-4.5-4.5" />
-              </svg>
-              <span>Tìm kiếm</span>
-            </button>
-          </div>
-
-          {/* face-only: Tên / ID / Gender / Age / Glasses / Mask */}
-          <div id="srcFaceFilters" style={{display: tab === 'face' ? 'flex' : 'none', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', marginTop: 12}}>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 170}}>
-              <span className="view-sub">Tên</span>
-              <input type="text" id="srcFName" placeholder="Nhập tên" value={fName} onChange={e => setFName(e.target.value)}
-                style={{height: 38, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 10px'}} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5, minWidth: 170}}>
-              <span className="view-sub">Số ID</span>
-              <input type="text" id="srcFId" placeholder="Nhập số ID" value={fId} onChange={e => setFId(e.target.value)}
-                style={{height: 38, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 10px'}} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Gender</span>
-              <SrcDrop id="gender" single opts={SRC_FGENDER.map(([v, l]) => ({value: v, label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Age</span>
-              <SrcDrop id="age" single opts={SRC_FAGE.map(([v, l]) => ({value: v, label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Glasses</span>
-              <SrcDrop id="glasses" single opts={SRC_FGLASSES.map(([v, l]) => ({value: v, label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 5}}>
-              <span className="view-sub">Mask</span>
-              <SrcDrop id="mask" single opts={SRC_FMASK.map(([v, l]) => ({value: v, label: l}))}
-                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
-            </div>
-          </div>
-
-          {/* Toolbar — dòng 2 bên trong panel (Select/Delete/Export/Grid/List) */}
-          <div className="src-toolbar" style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap'}}>
-            <button data-glassbtn id="srcSelPage" style={{height: 32, padding: '0 13px', borderRadius: 11}} onClick={selectThisPage}>Select This Page</button>
-            <button data-glassbtn id="srcDelete" style={{height: 32, padding: '0 13px', borderRadius: 11}} title="Xóa alarm đã chọn"
+            <div className="grow" />
+            <span className="view-sub" id="srcSelHint" hidden={sel.size === 0}>
+              {t('search.selectedItemsCount', {count: sel.size})}
+            </span>
+            <button data-glassbtn id="srcSelPage" style={{height: 32, padding: '0 13px', borderRadius: 11}} onClick={selectThisPage}>{t('search.selectThisPage')}</button>
+            <button data-glassbtn id="srcDelete" style={{height: 32, padding: '0 13px', borderRadius: 11}} title={t('search.deleteSelectedHint')}
               disabled={deleting} onClick={onDelete}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
                 <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
               </svg>
-              <span>Delete</span>
+              <span>{t('search.delete')}</span>
             </button>
-            <button data-glassbtn id="srcExport" style={{height: 32, padding: '0 13px', borderRadius: 11}} title="Export dữ liệu qua box" onClick={onExport}>
+            <button data-glassbtn id="srcExport" style={{height: 32, padding: '0 13px', borderRadius: 11}} title={t('search.exportHint')} onClick={onExport}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 13, height: 13}}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
               </svg>
-              <span>Export</span>
+              <span>{t('search.export')}</span>
             </button>
-            <span className="tb-div" />
-            <div data-glass data-seg className="seg" id="srcView" style={{flex: 'none', padding: 3, borderRadius: 12}}>
-              <button data-src-view="grid" className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}>Grid</button>
-              <button data-src-view="list" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>List</button>
+          </div>
+          <div className="src-filters">
+            <div className="src-f">
+              <span className="view-sub">{t('search.camera')}</span>
+              <SrcDrop id="cams" opts={cams.map(c => ({value: String(c.id), label: c.name}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} allLabel={t('search.all')} selectedLabel={t('search.selected')} />
             </div>
-            <div className="grow" />
-            <span className="view-sub" id="srcSelHint" hidden={sel.size === 0}>
-              Đã chọn <b id="srcSelN">{sel.size}</b> mục
-            </span>
+            {/* behavior-only: Loại alarm + Đối tượng */}
+            <div className="src-f" style={{display: tab === 'behavior' ? 'flex' : 'none'}}>
+              <span className="view-sub">{t('search.alarmType')}</span>
+              <SrcDrop id="algos" opts={algos.map(a => ({value: a.id, label: a.name}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} allLabel={t('search.all')} selectedLabel={t('search.selected')} />
+            </div>
+            <div className="src-f" style={{display: tab === 'behavior' ? 'flex' : 'none'}}>
+              <span className="view-sub">{t('search.object')}</span>
+              <SrcDrop id="obj" opts={SRC_FOBJ(t).map(([v, l]) => ({value: String(v), label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} allLabel={t('search.all')} selectedLabel={t('search.selected')} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.result')}</span>
+              <SrcDrop id="st" opts={SRC_STATUS(t).map(([v, l]) => ({value: v, label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} allLabel={t('search.all')} selectedLabel={t('search.selected')} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.from')}</span>
+              <DTInput id="searchFrom" value={fromVal} onChange={setFromVal} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.to')}</span>
+              <DTInput id="searchTo" value={toVal} onChange={setToVal} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.match')}</span>
+              <SrcDrop id="match" single opts={[['999', t('search.genderAll')], ['1', t('search.matchTrue')], ['2', t('search.matchFalse')]].map(([v, l]) => ({value: v, label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
+            </div>
+            <button data-goldbtn id="searchGo" style={{height: 38, padding: '0 20px', borderRadius: 14}}
+              onClick={() => loadSearch(null, 1)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
+                <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M21 21l-4.5-4.5" />
+              </svg>
+              <span>{t('search.searchBtn')}</span>
+            </button>
+          </div>
+
+          {/* face-only: Tên / ID / Gender / Age / Glasses / Mask */}
+          <div id="srcFaceFilters" className="src-filters" style={{display: tab === 'face' ? 'grid' : 'none'}}>
+            <div className="src-f">
+              <span className="view-sub">{t('search.name')}</span>
+              <input type="text" id="srcFName" placeholder={t('search.namePlaceholder')} value={fName} onChange={e => setFName(e.target.value)}
+                style={{height: 38, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 10px'}} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.idNo')}</span>
+              <input type="text" id="srcFId" placeholder={t('search.idPlaceholder')} value={fId} onChange={e => setFId(e.target.value)}
+                style={{height: 38, background: 'rgba(255,255,255,.06)', border: '1px solid rgba(213,194,149,.30)', borderRadius: 12, colorScheme: 'dark', color: 'inherit', padding: '0 10px'}} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.gender')}</span>
+              <SrcDrop id="gender" single opts={SRC_FGENDER(t).map(([v, l]) => ({value: v, label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.age')}</span>
+              <SrcDrop id="age" single opts={SRC_FAGE(t).map(([v, l]) => ({value: v, label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.glasses')}</span>
+              <SrcDrop id="glasses" single opts={SRC_FGLASSES(t).map(([v, l]) => ({value: v, label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
+            </div>
+            <div className="src-f">
+              <span className="view-sub">{t('search.mask')}</span>
+              <SrcDrop id="mask" single opts={SRC_FMASK(t).map(([v, l]) => ({value: v, label: l}))}
+                openId={openId} onToggle={setOpenId} onChange={() => {}} init={setDrop} />
+            </div>
           </div>
         </div>
 
@@ -791,20 +939,22 @@ export default function SearchView() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="rgba(229,229,234,.4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{width: 30, height: 30}}>
                   <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M21 21l-4.5-4.5" />
                 </svg>
-                <span className="t1" id="searchEmptyT1">{total ? 'Không có dữ liệu trang này' : 'Không có kết quả'}</span>
-                <span className="t2" id="searchEmptyT2">Chưa tìm kiếm, hoặc không có alarm trong khoảng đã chọn</span>
+                <span className="t1" id="searchEmptyT1">{total ? t('search.noDataThisPage') : t('search.noResults')}</span>
+                <span className="t2" id="searchEmptyT2">{t('search.emptySub')}</span>
               </div>
             ) : (
               <div className={'lib-grid' + (view === 'list' ? ' list' : '')} id="searchGrid"
                 style={view === 'grid' ? {gridTemplateColumns: 'repeat(5,1fr)'} : undefined}>
                 {rows.map((x, i) => {
-                  const st = SRC_STATUS.find(s => s[0] === String(x.status));
+                  const stList = SRC_STATUS(t);
+                  const st = stList.find(s => s[0] === String(x.status));
                   const stCls = Number(x.status) === 0 ? 'err' : 'ok';
-                  const obj = SRC_OBJ[(x.object_list || [{}])[0]?.object_type];
+                  const objMap = SRC_OBJ(t);
+                  const obj = objMap[(x.object_list || [{}])[0]?.object_type];
                   const url = srcPic(x);
                   const d = x.capture_time ? new Date(x.capture_time * 1000) : null;
                   const isSel = sel.has(x.alarm_id);
-                  const kind = [algoName(x.algo_model), obj].filter(Boolean).join(' · ');
+                  const kind = [algoName(t, x.algo_model), obj].filter(Boolean).join(' · ');
                   return (
                     <div key={x.alarm_id ?? i} className={'lib-card src-card' + (isSel ? ' src-sel' : '')}
                       data-alarm={x.alarm_id} onClick={() => onSelectCard(x.alarm_id)}>
@@ -812,14 +962,14 @@ export default function SearchView() {
                         <span className={'lib-ms ' + stCls}>{st ? st[1] : '#' + x.status}</span>
                         <span className="lib-kind">{kind}</span>
                         <div className="src-actions">
-                          <button className="src-a" data-act="view" title="Xem" onClick={e => { e.stopPropagation(); setModal({mode: 'view', row: x}); }}>View</button>
-                          <button className="src-a" data-act="edit" title="Đổi trạng thái" onClick={e => { e.stopPropagation(); setModal({mode: 'edit', row: x}); }}>Edit</button>
-                          <button className="src-a" data-act="video" title="Xem clip" onClick={e => { e.stopPropagation(); playClip(x); }}>Video</button>
+                          <button className="src-a" data-act="view" title={t('search.view')} onClick={e => { e.stopPropagation(); setModal({mode: 'view', row: x}); }}>{t('search.view')}</button>
+                          <button className="src-a" data-act="edit" title={t('search.editStatus')} onClick={e => { e.stopPropagation(); setModal({mode: 'edit', row: x}); }}>{t('search.edit')}</button>
+                          <button className="src-a" data-act="video" title={t('search.viewClip')} onClick={e => { e.stopPropagation(); playClip(x); }}>{t('search.video')}</button>
                         </div>
                       </div>
                       <div className="lib-meta">
                         <span className="lib-name">{x.channel_name || ('CH' + x.channel_id)}</span>
-                        <span className="lib-sub">{d && !isNaN(d) ? d.toLocaleString('vi-VN') : ''}</span>
+                        <span className="lib-sub">{d && !isNaN(d) ? d.toLocaleString() : ''}</span>
                       </div>
                     </div>
                   );
@@ -829,11 +979,19 @@ export default function SearchView() {
             {/* Pager — cuối panel thẻ kết quả */}
             <div className="pager" id="searchPager" hidden={pages <= 1} style={{justifyContent: 'center', paddingTop: 12}}>
               <div className="mid">
-                <button className="pg" data-pgctrl data-pg-dir id="searchPgPrev" title="Trang trước" aria-label="Trang trước"
-                  onClick={() => { if (curPage > 1) { setPage(curPage - 1); loadSearch({...qRef.current, page: curPage - 1}); } }}>‹</button>
-                <span className="view-sub" id="searchPgInfo">{rows.length ? `${total} alarm · trang ${curPage}/${pages}` : `0 / ${total} · trang ${curPage}/${pages}`}</span>
-                <button className="pg" data-pgctrl data-pg-dir id="searchPgNext" title="Trang sau" aria-label="Trang sau"
-                  onClick={() => { if (curPage < pages) { setPage(curPage + 1); loadSearch({...qRef.current, page: curPage + 1}); } }}>›</button>
+                <button data-pgctrl data-pg-dir id="searchPgPrev" title={t('lib.prevPage')} aria-label={t('lib.prevPage')}
+                  className={curPage <= 1 ? 'dis' : ''} onClick={() => goPage(curPage - 1)}>‹</button>
+                <span id="searchPgNums" style={{display: 'flex', alignItems: 'center', gap: 2}}>
+                  {pageWindow(curPage, pages).map((p, i) => p === '…'
+                    ? <span className="pg-gap" key={'g' + i}>…</span>
+                    : <button key={p} className={'pg' + (p === curPage ? ' on' : '')}
+                        aria-current={p === curPage ? 'page' : undefined}
+                        aria-label={t('lib.pageNumber', {page: p})} onClick={() => goPage(p)}>{p}</button>)}
+                </span>
+                <button data-pgctrl data-pg-dir id="searchPgNext" title={t('lib.nextPage')} aria-label={t('lib.nextPage')}
+                  className={curPage >= pages ? 'dis' : ''} onClick={() => goPage(curPage + 1)}>›</button>
+                <span className="tb-div" />
+                <span className="view-sub" id="searchPgInfo">{t('search.pagerInfo', {total, pages})}</span>
               </div>
             </div>
           </div>
@@ -846,11 +1004,11 @@ export default function SearchView() {
           onClick={e => { if (e.target === e.currentTarget) setModal(null); }}>
           <div data-glass style={{maxWidth: 'min(720px,92vw)', maxHeight: '92vh', overflow: 'auto', borderRadius: 18, border: '1px solid rgba(213,194,149,.34)', background: 'linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.04))', boxShadow: '0 24px 60px rgba(0,0,0,.6)', padding: 18}}>
             <div style={{display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap'}}>
-              <span className="view-h" id="searchMdTitle" style={{fontSize: 16}}>{algoName(modal.row.algo_model)} · #{modal.row.alarm_id}</span>
+              <span className="view-h" id="searchMdTitle" style={{fontSize: 16}}>{algoName(t, modal.row.algo_model)} · #{modal.row.alarm_id}</span>
               <div className="grow" />
               <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
-                <button data-glassbtn id="searchMdVideo" style={{height: 32, padding: '0 12px', borderRadius: 10}} onClick={() => playClip(modal.row)}>Xem clip</button>
-                <button data-glassbtn id="searchMdClose" style={{height: 32, padding: '0 12px', borderRadius: 10}} onClick={() => setModal(null)}>Đóng</button>
+                <button data-glassbtn id="searchMdVideo" style={{height: 32, padding: '0 12px', borderRadius: 10}} onClick={() => playClip(modal.row)}>{t('search.viewClip')}</button>
+                <button data-glassbtn id="searchMdClose" style={{height: 32, padding: '0 12px', borderRadius: 10}} onClick={() => setModal(null)}>{t('common.close')}</button>
               </div>
             </div>
 
@@ -862,10 +1020,9 @@ export default function SearchView() {
               </div>
             ) : modal.mode === 'edit' ? (
               <EditPanel row={modal.row} onClose={() => setModal(null)} onSaved={r => {
-                // cập nhật rows sau khi đổi status
                 setRows(prev => prev.map(p => p.alarm_id === r.alarm_id ? {...p, status: r.status} : p));
                 setModal(null);
-              }} toastShow={toastShow} />
+              }} toastShow={toastShow} t={t} />
             ) : (
               <div>
                 <div style={{textAlign: 'center'}}>
@@ -873,11 +1030,11 @@ export default function SearchView() {
                 </div>
                 <div id="searchMdMeta" style={{marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4}}>
                   {(() => {
-                    const st = SRC_STATUS.find(s => s[0] === String(modal.row.status));
+                    const st = SRC_STATUS(t).find(s => s[0] === String(modal.row.status));
                     const rowsInfo = [
-                      ['Camera', modal.row.channel_name || ('CH' + modal.row.channel_id)],
-                      ['Thời gian', fmtTime(modal.row.capture_time)],
-                      ['Trạng thái', st ? st[1] : ('#' + modal.row.status)],
+                      [t('search.camera'), modal.row.channel_name || ('CH' + modal.row.channel_id)],
+                      [t('search.time'), fmtTime(modal.row.capture_time)],
+                      [t('search.result'), st ? st[1] : ('#' + modal.row.status)],
                     ];
                     return rowsInfo.map(([k, v]) => (
                       <div key={k} style={{display: 'flex', gap: 8}}>
@@ -902,52 +1059,52 @@ export default function SearchView() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{width: 17, height: 17}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
               </span>
               <div style={{display: 'flex', flexDirection: 'column', gap: 1}}>
-                <span className="view-h" style={{fontSize: 16, lineHeight: 1.15}}>Export Data</span>
-                <span className="view-sub" id="srcExpSub" style={{fontSize: 11}}>Xuất dữ liệu alarm qua box</span>
+                <span className="view-h" style={{fontSize: 16, lineHeight: 1.15}}>{t('search.exportTitle')}</span>
+                <span className="view-sub" id="srcExpSub" style={{fontSize: 11}}>{t('search.exportSub')}</span>
               </div>
               <div className="grow" />
-              <button data-glassbtn id="srcExpClose" aria-label="Đóng" style={{height: 30, padding: '0 10px', borderRadius: 9}} onClick={closeExport}>✕</button>
+              <button data-glassbtn id="srcExpClose" aria-label={t('common.close')} style={{height: 30, padding: '0 10px', borderRadius: 9}} onClick={closeExport}>✕</button>
             </div>
 
             <div style={{display: 'flex', flexDirection: 'column', gap: 14, padding: '16px 18px', fontSize: 13}}>
               <div>
                 <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7}}>
-                  <span className="view-sub" style={{fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase'}}>Export Type</span>
+                  <span className="view-sub" style={{fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase'}}>{t('search.exportType')}</span>
                   <span className="view-sub" id="srcExpTypeLbl" style={{fontSize: 11}}>{EXP_TYPE_LBL[expType] || ''}</span>
                 </div>
                 <div data-glass data-seg className="seg" id="srcExpType" style={{flex: 'none', padding: 4, borderRadius: 14, width: '100%'}}>
-                  <button data-exp-type="page" className={expType === 'page' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpType('page')}>Export This Page</button>
-                  <button data-exp-type="sel" className={expType === 'sel' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpType('sel')}>Export Selected</button>
+                  <button data-exp-type="page" className={expType === 'page' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpType('page')}>{t('search.exportThisPage')}</button>
+                  <button data-exp-type="sel" className={expType === 'sel' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpType('sel')}>{t('search.exportSelected')}</button>
                 </div>
               </div>
 
               <div>
                 <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7}}>
-                  <span className="view-sub" style={{fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase'}}>Alarm Image</span>
+                  <span className="view-sub" style={{fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase'}}>{t('search.alarmImage')}</span>
                   <span className="view-sub" id="srcExpImgLbl" style={{fontSize: 11}}>{EXP_YN_LBL[expImg] || ''}</span>
                 </div>
                 <div data-glass data-seg className="seg" id="srcExpImg" style={{flex: 'none', padding: 4, borderRadius: 14, width: '100%'}}>
-                  <button data-exp-val="1" className={expImg === '1' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpImg('1')}>Export</button>
-                  <button data-exp-val="0" className={expImg === '0' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpImg('0')}>Do Not Export</button>
+                  <button data-exp-val="1" className={expImg === '1' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpImg('1')}>{t('search.doExport')}</button>
+                  <button data-exp-val="0" className={expImg === '0' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpImg('0')}>{t('search.doNotExport')}</button>
                 </div>
               </div>
 
               <div>
                 <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7}}>
-                  <span className="view-sub" style={{fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase'}}>Alarm Video</span>
+                  <span className="view-sub" style={{fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase'}}>{t('search.alarmVideo')}</span>
                   <span className="view-sub" id="srcExpVidLbl" style={{fontSize: 11}}>{EXP_YN_LBL[expVid] || ''}</span>
                 </div>
                 <div data-glass data-seg className="seg" id="srcExpVid" style={{flex: 'none', padding: 4, borderRadius: 14, width: '100%'}}>
-                  <button data-exp-val="1" className={expVid === '1' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpVid('1')}>Export</button>
-                  <button data-exp-val="0" className={expVid === '0' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpVid('0')}>Do Not Export</button>
+                  <button data-exp-val="1" className={expVid === '1' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpVid('1')}>{t('search.doExport')}</button>
+                  <button data-exp-val="0" className={expVid === '0' ? 'on' : ''} style={{flex: 1, padding: '8px 6px'}} onClick={() => setExpVid('0')}>{t('search.doNotExport')}</button>
                 </div>
               </div>
             </div>
 
             <div style={{display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderTop: '1px solid rgba(255,255,255,.09)', background: 'rgba(0,0,0,.14)'}}>
               <div id="srcExpStatus" className="view-sub" style={{flex: 1, fontSize: 11, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{expStatus}</div>
-              <button data-glassbtn id="srcExpCancel" style={{height: 36, padding: '0 16px', borderRadius: 12}} onClick={closeExport}>Hủy</button>
-              <button data-goldbtn id="srcExpGo" style={{height: 36, padding: '0 22px', borderRadius: 12, fontWeight: 600}} disabled={exporting} onClick={onExportGo}>Export</button>
+              <button data-glassbtn id="srcExpCancel" style={{height: 36, padding: '0 16px', borderRadius: 12}} onClick={closeExport}>{t('common.cancel')}</button>
+              <button data-goldbtn id="srcExpGo" style={{height: 36, padding: '0 22px', borderRadius: 12, fontWeight: 600}} disabled={exporting} onClick={onExportGo}>{t('search.export')}</button>
             </div>
           </div>
         </div>
@@ -957,10 +1114,10 @@ export default function SearchView() {
       {toast && (
         <div style={{position: 'fixed', top: 16, right: 16, zIndex: 999,
           padding: '10px 16px', borderRadius: 12,
-          background: toast.sev === 'OK' ? 'rgba(48,209,88,.18)' : (toast.sev === 'CHÚ Ý' ? 'rgba(255,159,10,.18)' : 'rgba(255,69,58,.2)'),
-          border: '1px solid ' + (toast.sev === 'OK' ? 'rgba(48,209,88,.5)' : (toast.sev === 'CHÚ Ý' ? 'rgba(255,159,10,.5)' : 'rgba(255,69,58,.55)')),
+          background: toast.sev === 'OK' ? 'rgba(48,209,88,.18)' : (toast.sev === t('common.warning') ? 'rgba(255,159,10,.18)' : 'rgba(255,69,58,.2)'),
+          border: '1px solid ' + (toast.sev === 'OK' ? 'rgba(48,209,88,.5)' : (toast.sev === t('common.warning') ? 'rgba(255,159,10,.5)' : 'rgba(255,69,58,.55)')),
           color: '#f5f5f7', fontSize: 12.5, boxShadow: '0 12px 30px rgba(0,0,0,.5)', maxWidth: 360}}>
-          <b style={{marginRight: 6, color: toast.sev === 'OK' ? '#30d158' : (toast.sev === 'CHÚ Ý' ? '#ff9f0a' : '#ff6961')}}>{toast.sev}</b>
+          <b style={{marginRight: 6, color: toast.sev === 'OK' ? '#30d158' : (toast.sev === t('common.warning') ? '#ff9f0a' : '#ff6961')}}>{toast.sev}</b>
           <span>{toast.title}</span>
         </div>
       )}
@@ -969,7 +1126,7 @@ export default function SearchView() {
 }
 
 /** Panel Edit: Channel / Alarm Type / Alarm Time + Handling Result (radio 1/2/3) + Lưu. */
-function EditPanel({row, onClose, onSaved, toastShow}) {
+function EditPanel({row, onClose, onSaved, toastShow, t}) {
   const [status, setStatus] = useState(Number(row.status));
   const [saving, setSaving] = useState(false);
 
@@ -977,10 +1134,10 @@ function EditPanel({row, onClose, onSaved, toastShow}) {
     setSaving(true);
     try {
       const r = await post('search/status/update', {id: row.alarm_id, status});
-      toastShow('OK', 'Đã lưu kết quả xử lý');
+      toastShow('OK', t ? t('search.statusSaved') : 'Đã lưu kết quả xử lý');
       onSaved({...row, status});
     } catch (e) {
-      toastShow('LỖI', 'Cập nhật thất bại: ' + e.message);
+      toastShow(t ? t('common.error') : 'LỖI', (t ? t('search.updateFailed') : 'Cập nhật thất bại') + ': ' + e.message);
     } finally {
       setSaving(false);
     }
@@ -989,13 +1146,13 @@ function EditPanel({row, onClose, onSaved, toastShow}) {
   return (
     <div id="searchMdEdit" style={{marginTop: 12, padding: '14px 16px', border: '1px solid rgba(213,194,149,.30)', borderRadius: 14, background: 'rgba(255,255,255,.05)'}}>
       <div style={{display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13}}>
-        <div><span className="view-sub" style={{display: 'inline-block', minWidth: 110}}>Channel</span><span id="srcEdCh">{row.channel_name || ('CH' + row.channel_id)}</span></div>
-        <div><span className="view-sub" style={{display: 'inline-block', minWidth: 110}}>Alarm Type</span><span id="srcEdType">{algoName(row.algo_model) || row.algo_model || '—'}</span></div>
-        <div><span className="view-sub" style={{display: 'inline-block', minWidth: 110}}>Alarm Time</span><span id="srcEdTime">{fmtTime(row.capture_time) || '—'}</span></div>
+        <div><span className="view-sub" style={{display: 'inline-block', minWidth: 110}}>{t ? t('search.camera') : 'Channel'}</span><span id="srcEdCh">{row.channel_name || ('CH' + row.channel_id)}</span></div>
+        <div><span className="view-sub" style={{display: 'inline-block', minWidth: 110}}>{t ? t('search.alarmType') : 'Alarm Type'}</span><span id="srcEdType">{algoName(t, row.algo_model) || row.algo_model || '—'}</span></div>
+        <div><span className="view-sub" style={{display: 'inline-block', minWidth: 110}}>{t ? t('search.time') : 'Alarm Time'}</span><span id="srcEdTime">{fmtTime(row.capture_time) || '—'}</span></div>
       </div>
-      <div style={{marginTop: 12}} className="view-sub">Handling Result</div>
+      <div style={{marginTop: 12}} className="view-sub">{t ? t('search.result') : 'Handling Result'}</div>
       <div id="srcEdRes" style={{display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6}}>
-        {SRC_STATUS.map(([v, l]) => {
+        {SRC_STATUS(t).map(([v, l]) => {
           if (v === '0') return null;
           return (
             <label key={v}>
@@ -1006,7 +1163,7 @@ function EditPanel({row, onClose, onSaved, toastShow}) {
         })}
       </div>
       <div style={{marginTop: 12, textAlign: 'right'}}>
-        <button data-glassbtn id="srcEdSave" style={{height: 32, padding: '0 16px', borderRadius: 10}} disabled={saving} onClick={save}>Lưu</button>
+        <button data-glassbtn id="srcEdSave" style={{height: 32, padding: '0 16px', borderRadius: 10}} disabled={saving} onClick={save}>{t ? t('common.save') : 'Lưu'}</button>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import VideoTile from './VideoTile.jsx';
+import {useTranslation} from '../i18n/index.jsx';
 
 /**
  * TileGrid — port drawGrid (app.js:187-226).
@@ -15,6 +16,7 @@ import VideoTile from './VideoTile.jsx';
  *  - onOpen(name)
  */
 export default function TileGrid({names, cols = 3, tileOf, onOpen}) {
+  const {t} = useTranslation();
   const size = cols * cols;
   const pages = Math.max(1, Math.ceil(names.length / size));
   const [page, setPage] = useState(0);
@@ -29,7 +31,7 @@ export default function TileGrid({names, cols = 3, tileOf, onOpen}) {
                    gridTemplateRows: `repeat(${cols},minmax(0,1fr))`}}>
         <div className="empty">
           <span className="plus">+</span>
-          <span className="t">Không có luồng nào khớp</span>
+          <span className="t">{t('live.noMatchingStream')}</span>
         </div>
       </div>
     );

@@ -2,6 +2,7 @@ import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {createPortal} from 'react-dom';
 import {BASE, jget, post, G} from '../api/client.js';
 import {useVideoStream} from '../hooks/useVideoStream.js';
+import { useTranslation } from '../i18n/index.jsx';
 
 /* ============================================================================
    AiView — port của section #v-ai (index.html) + ai.js, cho React.
@@ -66,9 +67,15 @@ const ALGO_VI = {
   GunmanDetection: 'Súng', ShipDetection: 'Tàu thuyền', SurfaceWaterDetection: 'Ngập nước mặt đường',
   TrafficParameters: 'Thông số giao thông', TrafficParameter: 'Thông số giao thông',
 };
-const algoName = (m, fromBox) => fromBox || ALGO_VI[m] || m;
+const algoName = (t, m, fromBox) => {
+  if (fromBox) return fromBox;
+  const tr = t?.('algos.' + m);
+  if (tr && tr !== ('algos.' + m)) return tr;
+  return ALGO_VI[m] || m;
+};
 
 const GRID = 10000; // hệ toạ độ của box, không phải pixel
+const STROKE = 1.25;  // độ dày nét vẽ vùng (px CSS) — nét mảnh đỡ răng cưa
 
 const AREA = {kind: 'polygon', key: 'polygon', min: 3, max: 6, label: 'vùng phát hiện'};
 const MASK = {kind: 'polygon', key: 'polygon', min: 3, max: 6, label: 'vùng che'};
@@ -195,6 +202,7 @@ const sep = () => <div className="cfg-sep"></div>;
 
 /* ---------------- component chính ---------------- */
 export default function AiView({focus, go}) {
+  const { t } = useTranslation();
   const [ch, setCh] = useState(null);          // channel_id đang cấu hình
   const [name, setName] = useState(null);      // tên stream ch<id>
 
@@ -268,7 +276,7 @@ export default function AiView({focus, go}) {
       setDefs(defsD.smart_list || []);
       setSmart(smartD.smart_list || []);
       setSel((smartD.smart_list || [])[0]?.algo_model || null);
-      loadCap(channelId, (smartD.smart_list || []).map(t => t.algo_model));
+      loadCap(channelId, (smartD.smart_list || []).map(tState => tState.algo_model));
     } catch {
       // box không nạp được -> giữ state rỗng (gốc hiện "Đang đọc…" rồi bỏ)
     }
@@ -298,7 +306,7 @@ export default function AiView({focus, go}) {
     const shape = (points, closed, col, alpha, arrow) => {
       if (!points.length) return;
       g.globalAlpha = alpha;
-      g.lineWidth = 2;
+      g.lineWidth = STROKE;
       g.strokeStyle = col;
       g.beginPath();
       points.forEach((p, i) => {
@@ -322,21 +330,23 @@ export default function AiView({focus, go}) {
         g.fillStyle = col;
         g.fill();
       }
+      g.font = '700 9px JetBrains Mono, monospace';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
       points.forEach((p, i) => {
         const [x, y] = px(p);
         g.beginPath();
-        g.arc(x, y, 5, 0, 7);
+        g.arc(x, y, 5, 0, Math.PI * 2);
         g.fillStyle = col;
         g.fill();
         g.fillStyle = '#0a0c0f';
-        g.font = '700 9px JetBrains Mono, monospace';
-        g.fillText(i + 1, x - 2.5, y + 3);
+        g.fillText(i + 1, x, y);
       });
       g.globalAlpha = 1;
     };
     // vùng đã lưu
-    const t = smart.find(x => x.algo_model === sel) || null;
-    const graphs = t?.graphs || [];
+    const tState = smart.find(x => x.algo_model === sel) || null;
+    const graphs = tState?.graphs || [];
     graphs.forEach((gr, i) => {
       const col = zoneColor(i);
       const on = pick === i;
@@ -353,7 +363,7 @@ export default function AiView({focus, go}) {
         const [x1, y1] = px(pts[pts.length - 1]);
         const [hx, hy] = px(hover);
         g.save();
-        g.lineWidth = 2;
+        g.lineWidth = STROKE;
         g.strokeStyle = col;
         g.globalAlpha = 0.9;
         g.beginPath();
@@ -373,17 +383,32 @@ export default function AiView({focus, go}) {
   useEffect(() => {
     const shot = shotRef.current, cv = cvRef.current;
     if (!shot || !cv) return;
-    // Canvas phải có backing store theo devicePixelRatio, không thì đường kẻ
-    // và mốc vùng bị nhòe trên màn hình HiDPI (CSS pixel != device pixel).
-    const ro = new ResizeObserver(() => {
-      if (!shot.clientWidth) return;
+    const apply = entry => {
       const dpr = window.devicePixelRatio || 1;
-      cv.width = Math.round(shot.clientWidth * dpr);
-      cv.height = Math.round(shot.clientHeight * dpr);
-      setCsz(n => n + 1);   // canvas bị xoá khi resize -> buộc vẽ lại
-    });
-    ro.observe(shot);
-    return () => ro.disconnect();
+      const dp = entry?.devicePixelContentBoxSize?.[0];
+      const r = shot.getBoundingClientRect();
+      const w = dp ? dp.inlineSize : Math.round(r.width * dpr);
+      const h = dp ? dp.blockSize : Math.round(r.height * dpr);
+      if (!w || !h || (cv.width === w && cv.height === h)) return;
+      cv.width = w;
+      cv.height = h;
+      setCsz(n => n + 1);   // đổi width xoá canvas -> buộc vẽ lại
+    };
+    const ro = new ResizeObserver(es => apply(es[es.length - 1]));
+    const observe = () => {
+      try { ro.observe(shot, {box: 'device-pixel-content-box'}); }
+      catch { ro.observe(shot); }
+    };
+    observe();
+    let mq;
+    const onDpr = () => { ro.unobserve(shot); observe(); watch(); };
+    const watch = () => {
+      mq?.removeEventListener('change', onDpr);
+      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mq.addEventListener('change', onDpr);
+    };
+    watch();
+    return () => { ro.disconnect(); mq?.removeEventListener('change', onDpr); };
   }, []);
 
   /* ---- chuyển toạ độ chuột -> hệ 0~10000 ---- */
@@ -394,9 +419,6 @@ export default function AiView({focus, go}) {
     return [(ev.clientX - r.left) / r.width * GRID, (ev.clientY - r.top) / r.height * GRID];
   }, []);
 
-  /** Trả {di, i}: di<0 = mốc trong `pts`, di>=0 = mốc trong `done[di].pts`.
-      Trả chỉ số (không phải tham chiếu mảng) để kéo thả không bám vào mảng cũ
-      sau khi setState đã tạo mảng mới. */
   const findPt = useCallback((p, ptsArr, doneArr) => {
     const HIT = 260;
     const near = list => {
@@ -515,10 +537,10 @@ export default function AiView({focus, go}) {
 
   /* ---- tab pane ---- */
   const paneRule = () => {
-    const t = smart.find(x => x.algo_model === sel) || null;
-    if (!t) return <div className="zone-none">Chọn một thuật toán để cấu hình</div>;
+    const tState = smart.find(x => x.algo_model === sel) || null;
+    if (!tState) return <div className="zone-none">Chọn một thuật toán để cấu hình</div>;
     const els = [];
-    const nums = Object.keys(FIELD).filter(k => t[k] != null);
+    const nums = Object.keys(FIELD).filter(k => tState[k] != null);
     if (nums.length) {
       els.push(head('Ngưỡng phát hiện'));
       els.push(
@@ -526,10 +548,10 @@ export default function AiView({focus, go}) {
           {nums.map(k => {
             const f = FIELD[k];
             return f.sw
-              ? <SwRow key={k} label={f.l} meta={f.h || ''} on={!!t[k]}
+              ? <SwRow key={k} label={f.l} meta={f.h || ''} on={!!tState[k]}
                   onChange={on => { const s = smart.slice(); const tt = s.find(x => x.algo_model === sel); tt[k] = on ? 1 : 0; setSmart(s); }} />
               : <CfgRow key={k} label={f.l} hint={f.h}>
-                  <Spin val={t[k]} lo={f.lo} hi={f.hi} step={f.st}
+                  <Spin val={tState[k]} lo={f.lo} hi={f.hi} step={f.st}
                     onChange={v => { const s = smart.slice(); const tt = s.find(x => x.algo_model === sel); tt[k] = v; setSmart(s); }} />
                 </CfgRow>;
           })}
@@ -537,7 +559,7 @@ export default function AiView({focus, go}) {
       );
     }
     const szKeys = SZ_GROUPS.filter(([p]) =>
-      t[`max_${p}_object_width`] != null || t[`min_${p}_object_height`] != null);
+      tState[`max_${p}_object_width`] != null || tState[`min_${p}_object_height`] != null);
     if (szKeys.length) {
       els.push(sep(), head('Kích thước đối tượng (0~10000)'));
       const sz = [];
@@ -548,11 +570,11 @@ export default function AiView({focus, go}) {
           const cells = [];
           for (const [ax, dim] of [['Rộng', 'width'], ['Cao', 'height']]) {
             const key = `${mm}_${pre}_object_${dim}`;
-            if (t[key] == null) continue;
+            if (tState[key] == null) continue;
             cells.push(
               <div className="cfg-ax" key={key}>
                 <span className="a">{ax}</span>
-                <Spin val={t[key]} lo={0} hi={10000} step={50}
+                <Spin val={tState[key]} lo={0} hi={10000} step={50}
                   onChange={v => { const s = smart.slice(); const tt = s.find(x => x.algo_model === sel); tt[key] = v; setSmart(s); }} />
               </div>,
             );
@@ -568,10 +590,10 @@ export default function AiView({focus, go}) {
       }
       if (sz.length) els.push(<div className="cfg-sz" key="sz">{sz}</div>);
     }
-    if (t.object_type != null) {
-      els.push(sep(), head('Loại đối tượng'), <ObjPicker key="obj" t={t} smart={smart} sel={sel} setSmart={setSmart} />);
+    if (tState.object_type != null) {
+      els.push(sep(), head('Loại đối tượng'), <ObjPicker key="obj" t={tState} smart={smart} sel={sel} setSmart={setSmart} />);
     }
-    const raw = Object.keys(RAW_FIELD).filter(k => t[k] != null);
+    const raw = Object.keys(RAW_FIELD).filter(k => tState[k] != null);
     if (raw.length) {
       els.push(sep(), head('Chỉ sửa được trên web box'));
       els.push(
@@ -600,9 +622,9 @@ export default function AiView({focus, go}) {
       return <div className="zone-none">Đang đọc lịch từ box…</div>;
     }
     const cells = sched;
-    const toggle = (k, t) => {
+    const toggle = (k, tState) => {
       const next = {...cells, [k]: cells[k].slice()};
-      next[k][t] = !next[k][t];
+      next[k][tState] = !next[k][tState];
       setSched(next);
     };
     return (
@@ -630,10 +652,10 @@ export default function AiView({focus, go}) {
                 setSched(next);
               }}>{label}</button>
               <div className="sc-cells">
-                {cells[key].map((on, t) => (
-                  <span key={t} className={'sc-cell' + (on ? ' on' : '')}
-                    title={`${label} ${HH(t)}–${HH(t + 1)}`}
-                    onClick={() => toggle(key, t)} />
+                {cells[key].map((on, tState) => (
+                  <span key={tState} className={'sc-cell' + (on ? ' on' : '')}
+                    title={`${label} ${HH(tState)}–${HH(tState + 1)}`}
+                    onClick={() => toggle(key, tState)} />
                 ))}
               </div>
             </div>
@@ -718,8 +740,8 @@ export default function AiView({focus, go}) {
   const pane = tab === 'sched' ? paneSched() : tab === 'link' ? paneLink() : paneRule();
 
   /* ---- danh sách vùng đã vẽ ---- */
-  const t = smart.find(x => x.algo_model === sel) || null;
-  const graphs = t?.graphs || [];
+  const tState = smart.find(x => x.algo_model === sel) || null;
+  const graphs = tState?.graphs || [];
   const zones = [];
   if (!sel) {
     zones.push(<div key="z" className="zone-none">Chọn một thuật toán ở trên để xem vùng phát hiện</div>);
@@ -756,7 +778,6 @@ export default function AiView({focus, go}) {
 
   const editZone = i => {
     const g = graphs[i];
-    const t2 = smart.find(x => x.algo_model === sel);
     setMode('draw'); setPick(null);
     setUsage(g.graph_usage === 'NotROI' ? 'NotROI' : 'ROI');
     const st = stepsOf(sel, g.graph_usage === 'NotROI' ? 'NotROI' : 'ROI')
@@ -788,7 +809,7 @@ export default function AiView({focus, go}) {
   const removeAlgo = m => {
     setConfirm({
       title: 'Xóa thuật toán',
-      msg: `Xóa "${algoName(m)}" khỏi ${name}?`,
+      msg: `Xóa "${algoName(t, m)}" khỏi ${name}?`,
       sub: 'Vùng phát hiện, lịch canh phòng và liên kết của thuật toán này sẽ mất.',
       yes: 'Xóa',
       onYes: async () => {
@@ -807,14 +828,14 @@ export default function AiView({focus, go}) {
       },
     });
   };
-  const stripTask = t => { const {person_control_info, ...rest} = t; return rest; };
+  const stripTask = tState => { const {person_control_info, ...rest} = tState; return rest; };
 
   /* ---- nạp thuật toán (picker) ---- */
   const openPicker = () => {
     if (!loaded.length) return;
-    setFpSel(new Set(smart.map(t => t.algo_model)));
+    setFpSel(new Set(smart.map(tState => tState.algo_model)));
     setFpCap(null); setFpOver(false); setPicker(true);
-    refreshCap(new Set(smart.map(t => t.algo_model)));
+    refreshCap(new Set(smart.map(tState => tState.algo_model)));
   };
   const refreshCap = async selSet => {
     if (fpBusy) return;
@@ -841,14 +862,14 @@ export default function AiView({focus, go}) {
   };
   const savePicker = async () => {
     const want = [...fpSel];
-    const cur = smart.map(t => t.algo_model);
+    const cur = smart.map(tState => tState.algo_model);
     const add = want.filter(m => !cur.includes(m));
     const del = cur.filter(m => !want.includes(m));
     if (!add.length && !del.length) { setPicker(false); return; }
     if (del.length) {
       setConfirm({
         title: 'Xóa thuật toán',
-        msg: `Bỏ ${del.length} thuật toán khỏi ${name}: ${del.map(m => algoName(m)).join(', ')}`,
+        msg: `Bỏ ${del.length} thuật toán khỏi ${name}: ${del.map(m => algoName(t, m)).join(', ')}`,
         sub: 'Vùng phát hiện, lịch canh phòng và liên kết của các thuật toán này sẽ mất.',
         yes: 'Xóa',
         onYes: () => doSavePicker(add, del, want),
@@ -860,7 +881,7 @@ export default function AiView({focus, go}) {
   const doSavePicker = async (add, del, want) => {
     setFpLoading(true);
     try {
-      const kept = smart.filter(t => want.includes(t.algo_model));
+      const kept = smart.filter(tState => want.includes(tState.algo_model));
       const fresh = add.map(m => {
         const d = (defs || []).find(x => x.algo_model === m);
         return d ? JSON.parse(JSON.stringify(d)) : {algo_model: m, graphs: []};
@@ -896,7 +917,7 @@ export default function AiView({focus, go}) {
           else if (s && pts.length) throw new Error(`${s.label} cần ít nhất ${s.min} điểm (đang có ${pts.length})`);
           const need = stepsOf(sel, usage);
           if (dd.length && dd.length < need.length)
-            throw new Error(`${algoName(sel)} cần vẽ đủ ${need.length} bước: ${need.map(x => x.label).join(' → ')}`);
+            throw new Error(`${algoName(t, sel)} cần vẽ đủ ${need.length} bước: ${need.map(x => x.label).join(' → ')}`);
           if (dd.length) tt.graphs = graphsFrom(sel, dd, usage);
         }
       }
@@ -920,7 +941,7 @@ export default function AiView({focus, go}) {
   };
   const clearAll = () => {
     setPts([]); setDone([]);
-    if (t) {
+    if (tState) {
       const ns = smart.slice();
       const tt = ns.find(x => x.algo_model === sel);
       tt.graphs = [];
@@ -940,27 +961,31 @@ export default function AiView({focus, go}) {
               strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
               <path d="M15 5l-7 7 7 7" />
             </svg>
-            Danh sách camera
+            {t('ai.camListBtn')}
           </button>
           <div style={{display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0}}>
-            <span className="view-h2"><span data-i18n="tAI">Cấu hình AI</span> · <span id="aiTitle">{name || '—'}</span></span>
+            <span className="view-h2"><span>{t('ai.configTitle')}</span> · <span id="aiTitle">{name || '—'}</span></span>
             <span className="view-sub" id="aiStream" style={{fontSize: 11}}>
               {name ? 'channel ' + ch + ' · ' + name : '—'}
             </span>
           </div>
           <div className="grow"></div>
           <div data-glass className="cap" style={{borderRadius: 14}}>
-            <span className="hint" id="aiHr" style={{color: cap < 15 ? 'var(--err2)' : cap < 40 ? 'var(--warn)' : 'var(--ok)'}}>
-              {cap != null ? 'CÔNG SUẤT CÒN ' + cap + '%' : ''}
+            <span className="cap-k">{t('cam.remainingPower')}</span>
+            <span className="cap-v" id="aiHr"
+              style={cap == null ? undefined : {color: cap < 15 ? 'var(--err2)' : cap < 40 ? 'var(--warn)' : 'var(--ok)'}}>
+              {cap != null ? cap + '%' : '—'}
             </span>
+            <div className="cap-bar"><i className={cap == null ? '' : cap < 15 ? 'err' : cap < 40 ? 'warn' : ''}
+              style={{width: (cap == null ? 0 : cap) + '%'}} /></div>
           </div>
-          <button data-glassbtn style={{height: 36, padding: '0 15px'}} onClick={backToList}>Hủy</button>
+          <button data-glassbtn style={{height: 36, padding: '0 15px'}} onClick={backToList}>{t('common.cancel')}</button>
           <button data-goldbtn style={{height: 36, padding: '0 18px'}} disabled={saving} onClick={save}>
-            {saving ? 'Đang lưu…' : 'Lưu cấu hình'}
+            {saving ? t('cam.saving') : t('common.saveConfig')}
           </button>
         </div>
 
-        {!ch && <div className="zone-none">Đang mở cấu hình AI của camera…</div>}
+        {!ch && <div className="zone-none">{t('ai.noCamSelected')}</div>}
 
         {/* ---- phần cấu hình AI (chỉ khi đã chọn camera) ---- */}
         {ch && (
@@ -974,13 +999,13 @@ export default function AiView({focus, go}) {
                   <button key={m} className={'fn-tab' + (sel === m ? ' on' : '')}
                     onClick={() => pickAlgo(m)} title={m}>
                     <span className="d"></span>
-                    <span className="l">{algoName(m)}</span>
+                    <span className="l">{algoName(t, m)}</span>
                     <span className="x" onClick={ev => { ev.stopPropagation(); removeAlgo(m); }}>&#10005;</span>
                   </button>
                 );
               })}
               <div className="fn-add" onClick={ev => { ev.stopPropagation(); openPicker(); }}>
-                <span className="p">+</span><span className="t">Thêm chức năng AI</span>
+                <span className="p">+</span><span className="t">{t('ai.addAiFunc')}</span>
               </div>
             </div>
 
@@ -993,18 +1018,13 @@ export default function AiView({focus, go}) {
                       strokeLinecap="round" strokeLinejoin="round" style={{width: 14, height: 14}}>
                       <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3M14.5 6.5l3 3" />
                     </svg>
-                    {mode === 'draw' ? 'Đang vẽ · bấm để dừng' : 'Vẽ vùng'}
+                    {mode === 'draw' ? t('ai.drawingStop') : t('ai.drawArea')}
                   </button>
-                  <button data-glassbtn onClick={clearAll} style={{height: 34, padding: '0 13px'}}>Xóa tất cả vùng</button>
+                  <button data-glassbtn onClick={clearAll} style={{height: 34, padding: '0 13px'}}>{t('ai.clearAllAreas')}</button>
                   <div className="grow"></div>
                   <span className="hint" style={{textAlign: 'right', color: hintColor}}>{hintText}</span>
                 </div>
 
-                {/* KHÔNG ghi đè aspect-ratio: canvas ROI phủ toàn hộp và map grid
-                    0–10000 trên toàn hộp, còn video là object-fit:contain. Hộp lệch
-                    tỉ lệ video -> video bị letterbox nhưng vùng vẫn vẽ tràn cả hộp
-                    => vùng trông to, lệch khỏi ảnh và nhoè. Giữ 16/9 của .ai-shot
-                    thì hộp == khung video, toạ độ vùng khớp đúng ảnh camera. */}
                 <div className="ai-shot" id="aiStage" data-roi data-drawing={mode === 'draw' ? 'on' : 'off'}
                   style={{width: '100%', aspectRatio: '16/9', position: 'relative'}}>
                   <div id="aiShot" ref={shotRef}>
@@ -1014,7 +1034,6 @@ export default function AiView({focus, go}) {
                     onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
                     onMouseLeave={onMouseLeave} onClick={onCanvasClick} onContextMenu={onContextMenu} />
                   <div data-roigrid></div>
-                  <div data-roiscan></div>
                   <div className="ai-shot-top">
                     <span className="ai-dot"></span>
                     <span className="ai-q" id="aiQual">—</span>
@@ -1025,9 +1044,9 @@ export default function AiView({focus, go}) {
               <div className="ai-right" style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', borderRadius: 20, overflow: 'hidden'}}>
                 <div className="cfg-tabs" id="aiTabs"
                   style={{flex: 'none', alignSelf: 'flex-start', margin: '10px 12px 0', flexWrap: 'wrap'}}>
-                  <button data-t="rule" className={tab === 'rule' ? 'on' : ''} onClick={() => setTab('rule')}>Quy tắc</button>
-                  <button data-t="sched" className={tab === 'sched' ? 'on' : ''} onClick={() => setTab('sched')}>Lịch canh phòng</button>
-                  <button data-t="link" className={tab === 'link' ? 'on' : ''} onClick={() => setTab('link')}>Liên kết hành động</button>
+                  <button data-t="rule" className={tab === 'rule' ? 'on' : ''} onClick={() => setTab('rule')}>{t('ai.tabRule')}</button>
+                  <button data-t="sched" className={tab === 'sched' ? 'on' : ''} onClick={() => setTab('sched')}>{t('ai.tabSched')}</button>
+                  <button data-t="link" className={tab === 'link' ? 'on' : ''} onClick={() => setTab('link')}>{t('ai.tabLink')}</button>
                 </div>
                 <div className="cfg-pane nosb" id="aiPane" style={{flex: 1, minHeight: 0, overflowY: 'auto', padding: 12}}>
                   {!sel
@@ -1039,7 +1058,7 @@ export default function AiView({focus, go}) {
 
             <div data-glass style={{flex: 'none', height: '11vh', minHeight: 70, maxHeight: 100, display: 'flex', flexDirection: 'column', borderRadius: 14, padding: '7px 12px', overflow: 'hidden'}}>
               <div style={{flex: 'none', display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5, flexWrap: 'wrap'}}>
-                <span className="card-h">Vùng phát hiện</span>
+                <span className="card-h">{t('ai.detectionZone')}</span>
                 <div className="grow"></div>
                 <span style={{font: '400 10px/1 var(--b)', color: 'rgba(229,229,234,.38)', whiteSpace: 'nowrap'}}>
                   bấm vùng để chọn trên ảnh · Sửa / Xóa từng vùng
@@ -1052,11 +1071,6 @@ export default function AiView({focus, go}) {
       </div>
 
       {/* ---- MODAL · XÁC NHẬN (dùng chung, port cfWrap) ---- */}
-      {/* Portal ra body: .body có z-index:1 nên tạo stacking context, overlay
-          z-index:150 bị nhốt trong đó (header z-index:30 là sibling cao hơn đè
-          lên), và bất kỳ ancestor có transform/backdrop-filter cũng biến
-          position:fixed thành neo theo ancestor -> modal rơi lên trên cùng thay
-          vì giữa màn hình. Portal triệt tiêu cả lớp nguyên nhân này. */}
       {confirm && createPortal((
         <div className="overlay" data-overlay onClick={() => setConfirm(null)}>
           <div className="modal" data-modal data-glass style={{width: 'min(440px,100%)', borderRadius: 22}}
@@ -1078,12 +1092,12 @@ export default function AiView({focus, go}) {
               <span className="hint">{confirm.sub}</span>
             </div>
             <div className="m-foot" style={{borderTop: 'none', justifyContent: 'flex-end', padding: '16px 18px 18px'}}>
-              <button data-glassbtn style={{height: 36, padding: '0 16px'}} onClick={() => setConfirm(null)}>Hủy</button>
+              <button data-glassbtn style={{height: 36, padding: '0 16px'}} onClick={() => setConfirm(null)}>{t('common.cancel')}</button>
               <button data-redbtn style={{height: 36, padding: '0 18px'}} onClick={() => {
                 const fn = confirm.onYes;
                 setConfirm(null);
                 fn && fn();
-              }}>{confirm.yes || 'Xóa'}</button>
+              }}>{confirm.yes || t('common.delete')}</button>
             </div>
           </div>
         </div>
@@ -1095,13 +1109,13 @@ export default function AiView({focus, go}) {
           <div className="modal" data-modal data-glass style={{width: 'min(780px,100%)'}} onClick={e => e.stopPropagation()}>
             <div className="m-head">
               <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5}}>
-                <span className="m-title">Nạp thuật toán · <span id="fpCam">{name}</span></span>
+                <span className="m-title">{t('ai.loadAlgoTitle')} · <span id="fpCam">{name}</span></span>
                 <span className="view-sub">Chỉ hiện thuật toán box đã nạp sẵn · algo/list/current</span>
               </div>
-              <button className="m-x" data-mx onClick={() => setPicker(false)}>✕</button>
+              <button className="m-x" data-mx aria-label={t('common.close')} onClick={() => setPicker(false)}>✕</button>
             </div>
             <div className="fp-cap">
-              <span className="fp-cap-k">Công suất còn</span>
+              <span className="fp-cap-k">{t('cam.remainingPower')}</span>
               <span className={'fp-cap-v' + (fpOver ? ' err' : fpCap < 40 ? ' warn' : '')} id="fpHr">
                 {fpCap != null ? fpCap + '%' : '—'}
               </span>
@@ -1117,20 +1131,20 @@ export default function AiView({focus, go}) {
                   <div key={m} className={'al-item' + (on ? ' on' : '') + (!on && fpOver ? ' dis' : '')}
                     title={m} onClick={() => toggleFp(m)}>
                     <span className="al-box"></span>
-                    <span className="al-nm">{algoName(m)}</span>
+                    <span className="al-nm">{algoName(t, m)}</span>
                   </div>
                 );
               })}
             </div>
             <div className="m-foot">
               <span className="hint" id="fpHint" style={{color: fpOver ? 'var(--err2)' : ''}}>
-                {fpOver ? 'Hết công suất — bỏ bớt thuật toán trước khi chọn thêm'
-                  : 'Bỏ tích để xóa thuật toán khỏi camera này'}
+                {fpOver ? t('ai.pickerOverPower')
+                  : t('ai.pickerHint')}
               </span>
               <div className="grow"></div>
-              <button data-glassbtn onClick={() => setPicker(false)} style={{height: 36, padding: '0 16px'}}>Hủy</button>
+              <button data-glassbtn onClick={() => setPicker(false)} style={{height: 36, padding: '0 16px'}}>{t('common.cancel')}</button>
               <button data-goldbtn disabled={fpLoading} onClick={savePicker} style={{height: 36, padding: '0 18px'}}>
-                {fpLoading ? 'Đang nạp…' : 'Nạp thuật toán'}
+                {fpLoading ? t('cam.addingToBox') : t('ai.loadAlgoBtn')}
               </button>
             </div>
           </div>

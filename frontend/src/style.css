@@ -247,6 +247,11 @@ aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direct
 .hist-h{display:flex;align-items:center;gap:9px}
 .hist-t{font:600 9.5px/1 var(--m);letter-spacing:.1em;color:var(--gold)}
 .hist-n{font:400 10px/1 var(--m);color:var(--ghost)}
+.hist-list{flex:1;min-height:0;display:flex;align-items:flex-start;gap:8px;
+  overflow-x:auto;overflow-y:hidden;padding:5px 0 2px}
+.h-item{flex:none;width:132px;border:1px solid var(--bd3);border-radius:6px;overflow:hidden;
+  cursor:pointer;background:var(--card)}
+.h-item:hover{border-color:var(--gold3)}
 .hist-list{flex:1;min-height:0;display:flex;align-items:flex-start;gap:10px;
   overflow-x:auto;overflow-y:hidden;padding:6px 4px 10px;margin:-4px -4px -4px;
   scrollbar-width:none;-ms-overflow-style:none}
@@ -274,7 +279,7 @@ aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direct
 /* ---------- CAMERA table (7 cot) ---------- */
 .tbl{display:flex;flex-direction:column;min-width:820px}
 .thead,.trow{display:grid;gap:10px;align-items:center;
-  grid-template-columns:56px minmax(150px,1.3fr) minmax(96px,.8fr) minmax(180px,1.6fr) 74px 92px 104px}
+  grid-template-columns:56px minmax(110px,200px) minmax(80px,120px) minmax(120px,160px) minmax(200px,1fr) 74px 92px 104px}
 .thead{padding:0 11px 8px;border-bottom:1px solid var(--bd4)}
 .thead span{font:600 9.5px/1 var(--m);letter-spacing:.09em;color:var(--ghost);text-transform:uppercase}
 .trow{padding:10px 11px;border-bottom:1px solid var(--bd2);cursor:pointer}
@@ -291,7 +296,7 @@ aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direct
   letter-spacing:.05em}
 .c-st .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex:none}
 .c-st.off{color:var(--err2)} .c-st.off .dot{background:var(--err)}
-.c-act{display:flex;align-items:center;gap:3px;justify-content:flex-end}
+.c-act{display:flex;align-items:center;gap:8px;justify-content:flex-end}
 .c-algos{margin-top:3px;font:400 10px/1.3 var(--m);color:rgba(213,194,149,.8);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .c-tag{font:500 9px/1 var(--m);color:var(--gold);background:rgba(217,162,51,.12);
@@ -530,8 +535,8 @@ aside{flex:none;width:320px;padding:14px 18px 14px 12px;display:flex;flex-direct
 .ai-shot video-stream video{object-fit:contain;background:#0a0d12}
 /* Con tro do JS dat theo mode (mac dinh 'default', 'crosshair' khi dang ve).
    De crosshair o day thi luc KHONG ve chuot van la dau cong. */
-/* z-index:4 de canvas nam TREN [data-roigrid]/[data-roiscan] (z-index:3), khong
-   thi luoi vang + vet quet phu len duong ke va moc vung -> trong nhu bi nhoe. */
+/* z-index:4 de canvas nam TREN [data-roigrid] (z-index:3), khong thi luoi vang
+   phu len duong ke va moc vung -> trong nhu bi nhoe. */
 .ai-shot canvas{position:absolute;inset:0;width:100%;height:100%;cursor:default;z-index:4}
 .ai-shot-top{position:absolute;top:11px;left:13px;display:flex;align-items:center;gap:8px;
   pointer-events:none}
@@ -884,8 +889,7 @@ a{color:#e6dbba}a:hover{color:#f4ecca}
 [data-camrow]::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);box-shadow:0 0 12px rgba(213,194,149,.65), 0 0 2px rgba(213,194,149,.8);opacity:0;transform:scaleY(.35);transform-origin:center;transition:opacity .22s ease,transform .26s cubic-bezier(.2,.85,.25,1)}
 [data-camrow]:hover{background:rgba(213,194,149,.08)}
 [data-camrow]:hover::before{opacity:1;transform:scaleY(1)}
-/* "Độ trễ" header centred to match its centred cell value */
-[data-camhead] > span:nth-child(5){text-align:center}
+/* "Luồng RTSP" header + value đều căn trái. */
 
 /* ---------- Floating glass panel (shared by list views) ---------- */
 .lg-panel{position:relative;border-radius:20px;overflow:hidden;
@@ -1056,10 +1060,6 @@ video-stream canvas,
 [data-roigrid]{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity .24s ease;
   background:repeating-linear-gradient(0deg,rgba(213,194,149,.09) 0 1px,transparent 1px 28px),
              repeating-linear-gradient(90deg,rgba(213,194,149,.09) 0 1px,transparent 1px 28px)}
-[data-roiscan]{position:absolute;left:0;right:0;top:0;height:14%;z-index:3;pointer-events:none;opacity:0;
-  background:linear-gradient(180deg,transparent,rgba(213,194,149,.22),transparent)}
-[data-roi][data-drawing="on"] [data-roiscan]{opacity:1;animation:lgScan 3.6s linear infinite}
-@keyframes lgScan{0%{transform:translateY(-120%)}100%{transform:translateY(760%)}}
 
 /* ---------- Zone list rows ---------- */
 [data-zonerow]{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;cursor:pointer;
@@ -1458,19 +1458,20 @@ video-stream canvas,
 .thead{border-bottom:1px solid rgba(255,255,255,.08)}
 .trow{position:relative;border-bottom:1px solid rgba(255,255,255,.06);
   transition:background .16s ease,transform .16s ease}
-.trow::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;
+.trow::before,.notif-card::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;
   background:linear-gradient(180deg,#e6dbba 0%,#dbcb9f 45%,#cdb98a 100%);
   box-shadow:0 0 12px rgba(213,194,149,.65),0 0 2px rgba(213,194,149,.8);
   opacity:0;transform:scaleY(.35);transform-origin:center;
   transition:opacity .22s ease,transform .26s cubic-bezier(.2,.85,.25,1)}
 .trow:hover{background:rgba(213,194,149,.08)}
-.trow:hover::before{opacity:1;transform:scaleY(1)}
+.trow:hover::before,.notif-card:hover::before{opacity:1;transform:scaleY(1)}
 .c-id{font:600 11.5px/1 var(--m);color:#d5c295}
 .c-nm{font:600 12.5px/1.2 var(--b);color:#f5f5f7}
 .c-md{font:400 10px/1.2 var(--m);color:rgba(229,229,234,.45)}
 .c-zone{font:400 12px/1.2 var(--b);color:#a1a1a6}
+.c-ip{font:400 11px/1.2 'JetBrains Mono',monospace;color:#8e8e93}
 .c-url{font:400 11px/1.2 var(--m);color:#8e8e93}
-.c-lat{font:500 11.5px/1 var(--m);text-align:center}
+.c-lat{font:500 11.5px/1 var(--m)}
 .c-st{justify-self:start;display:inline-flex;align-items:center;gap:6px;font:800 10px/1 var(--b);letter-spacing:.04em;
   color:#30d158;text-shadow:0 1px 2px rgba(0,0,0,.6);border-radius:99px;padding:5px 9px;white-space:nowrap;
   background:linear-gradient(168deg,rgba(48,209,88,.30) 0%,rgba(48,209,88,.12) 55%,rgba(34,139,34,.20) 100%);
@@ -1504,9 +1505,13 @@ video-stream canvas,
 
 /* ---------- LOG timeline: the design block above already carries .tl-*.
    Only the bits the design lacks are authored here. ---------- */
-.tl-th{width:150px;border-radius:8px;background:#101216}
+.tl-th{width:150px;border-radius:8px;background:#101216;
+  border:1px solid rgba(255,255,255,.13);box-shadow:0 8px 20px rgba(0,0,0,.4);
+  transition:transform .22s cubic-bezier(.2,.85,.25,1),border-color .2s ease,box-shadow .22s ease}
 .tl-th img{border-radius:8px}
 .tl-th .no{color:rgba(229,229,234,.3);font:400 10px/1 var(--b)}
+.tl-row:hover .tl-th{transform:translateY(-3px) scale(1.02);border-color:var(--gglow);
+  box-shadow:0 0 0 1px rgba(213,194,149,.4),0 14px 30px rgba(0,0,0,.5)}
 .tl-more{color:#d5c295;font:500 12.5px/1 var(--b)}
 /* nút "Bỏ qua" trên thẻ nhật ký — ui.js chi vẽ khi camera DANG báo động, và nó
    biến mất ở lần vẽ lại sau khi bấm (không cần nhớ thẻ nào đã bỏ qua) */
@@ -1550,7 +1555,23 @@ video-stream canvas,
 .tg-panel-h{font:600 12px/1 var(--b);color:var(--dim);margin-bottom:10px}
 .tg-groups{max-height:260px;overflow-y:auto}
 .tg-panel-f{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
-.notif-card{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06);transition:background .14s ease}
+/* Bảng thông báo (nút Nhật ký trong Dock) — nối vào body, position:fixed do JS đặt */
+.notif-panel{position:fixed;z-index:1000;width:320px;
+  border:1px solid rgba(213,194,149,.34);border-radius:16px;padding:8px;overflow:hidden;
+  background:linear-gradient(168deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.045) 42%,rgba(213,194,149,.07) 100%);
+  box-shadow:0 16px 34px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.1);
+  backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%)}
+.notif-head{display:flex;align-items:center;justify-content:space-between;padding:6px 8px 10px;
+  font:700 12px/1 var(--b);letter-spacing:.08em;color:#d5c295}
+.notif-acts{display:flex;align-items:center;gap:6px}
+/* nút liquid glass — override padding/layout của [data-glassbtn]/[data-goldbtn] cho gọn trong panel */
+.notif-acts .notif-more{padding:7px 12px;border-radius:10px;font-size:11px;gap:6px;height:auto;line-height:1}
+/* List kéo margin âm đúng padding panel (8px) -> thẻ + vạch vàng chạm 2 mép panel.
+   Không padding ngang trên list: content box = full bề rộng trong viền, nên thẻ
+   vừa khít, overflow của scroll không cắt. */
+.notif-list{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin:0 -8px}
+/* padding 22px = 14px gốc + 8px bù margin âm -> chữ trong thẻ không dịch chuyển */
+.notif-card{position:relative;display:flex;align-items:center;gap:10px;padding:11px 22px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06);transition:background .14s ease}
 .notif-card:last-child{border-bottom:none}
 .notif-card:hover{background:rgba(213,194,149,.1)}
 .notif-dot{flex:none;width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
@@ -1561,9 +1582,9 @@ video-stream canvas,
   backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
   -webkit-backdrop-filter:blur(20px) saturate(190%) brightness(1.14);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.42),0 8px 20px rgba(0,0,0,.4)}
-.notif-b{flex:1;min-width:0}
+.notif-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
 .notif-t{font:600 13px/1.3 var(--b);color:#f5f5f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.notif-s{font:400 10.5px/1.3 var(--m);color:rgba(229,229,234,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.notif-s{font:400 10.5px/1.3 var(--m);color:rgba(229,229,234,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .notif-empty{padding:20px 14px;text-align:center;font:400 12px/1.4 var(--m);color:rgba(229,229,234,.45)}
 /* Highlight thẻ vừa chọn trong nhật ký: vàng dock + nháy viền */
 .tl-row.hl{background:rgba(213,194,149,.16)}
@@ -1989,8 +2010,14 @@ nav[data-dock] .badge{position:absolute;top:-6px;left:calc(100% - 9px);z-index:2
 
 /* camera table needs the design's wider fixed columns (52 + 300 + 88 + 170) */
 .tbl{min-width:1040px}
-.thead,.trow{grid-template-columns:52px minmax(0,1.1fr) minmax(0,.8fr) minmax(0,1.2fr) 300px 88px 170px;
+.thead,.trow{grid-template-columns:52px minmax(120px,240px) minmax(80px,150px) minmax(130px,190px) minmax(220px,640px) 120px 88px minmax(170px,1fr);
   gap:12px}
+/* Hàng camera chạm 2 mép panel .tbl (padding ngang 18px): list kéo margin âm,
+   padding hàng bù lại 29px (11px gốc + 18px) -> các cột trong hàng không dịch.
+   .thead xử lý y hệt trong CamView.jsx để cột header vẫn khớp cột hàng.
+   .tbl có overflow:hidden từ [data-glass] nên góc vuông tự clip theo bo 20px. */
+#camList{margin:0 -18px}
+#camList .trow{padding:10px 29px}
 
 /* detail sidebar: the merged RTSP+session card must not grow, the AI card must */
 #v-detail aside > .card:first-child{flex:none}
@@ -2034,27 +2061,35 @@ nav[data-dock] .badge{position:absolute;top:-6px;left:calc(100% - 9px);z-index:2
 .live-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .live-split > .bar{flex:none}
 .cam-rail{flex:none;width:308px;box-sizing:border-box;display:flex;flex-direction:column;
-  gap:10px;border-radius:18px;padding:12px;overflow:visible}
+  gap:10px;border-radius:18px;padding:12px;overflow:hidden}
+.cam-rail::after{display:none} /* bỏ liquid sheen trên panel camera rail */
 /* Toolbar lưới được gom vào rail cho gọn: bỏ nền khung .tb, để hàng nhỏ, nút
    "Làm mới" chỉ còn icon, cho phép wrap khi hẹp. */
 .cam-rail .tb{background:none;border:0;box-shadow:none;border-radius:0;padding:0;height:auto;
   flex-wrap:wrap;gap:6px}
 .cam-rail .tb .tb-div{display:none}
-.cam-rail #layoutBtn,.cam-rail #fBtn{height:27px !important;padding:0 9px !important;
-  border-radius:9px !important;font-size:11px !important}
-.cam-rail #layoutBtn svg,.cam-rail #fBtn svg,.cam-rail #camRefresh svg{width:11px !important;height:11px !important}
-.cam-rail #camRefresh{height:27px !important;width:27px !important;border-radius:9px !important}
-.cam-rail #camRefresh{width:32px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.cam-rail #layoutBtn,.cam-rail #fBtn{height:32px !important;padding:0 10px !important;
+  border-radius:10px !important;font-size:12px !important}
+.cam-rail #layoutBtn svg,.cam-rail #camRefresh svg{width:15px !important;height:15px !important}
+.cam-rail #fBtn svg{width:18px !important;height:18px !important;flex:none;display:block}
+.cam-rail #camRefresh{height:32px !important;width:32px !important;border-radius:10px !important}
+.cam-rail #camRefresh{width:36px;padding:0;display:inline-flex;align-items:center;justify-content:center}
 .cam-rail #camRefresh span{display:none}
 .rail-h{flex:none;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.rail-h .hist-t{font-size:12.5px;letter-spacing:.05em}
-.rail-h .hist-n{font-size:11px}
+.rail-h .hist-t{font-size:13.5px;letter-spacing:.05em}
+.rail-h .hist-n{font-size:12px}
 .rail-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
 /* Rail giống hàng bảng camera: KHÔNG khung mỗi thẻ, chỉ là dòng (.trow) với
    border-bottom + hover vạch vàng. Mỗi ô nhét vào chính cell cua .tbl lam nho
    gap ra de danh sach day dam hon. */
-.cam-rail .rail-list{gap:2px}
-.cam-rail .rail-row{display:flex;align-items:center;gap:9px;padding:9px 2px;width:100%;
+/* Rail-list: kéo margin âm sang hai mép panel, BỎ padding ngang để content box
+   = full 308px panel -> hàng con nằm trọn bề rộng panel, không bị overflow của
+   scroll clip. */
+.cam-rail .rail-list{gap:2px;margin:0 -12px;border-radius:18px;overflow-x:clip}
+/* Hàng: nằm sát mép panel (bề rộng full 308px), padding 14px (12px mép + 2px gốc)
+   để KHUNG NỘI DUNG 280px giữ nguyên như trước -> thành phần bên trong không
+   dịch chuyển, hover + vạch vàng chạm mép panel. */
+.cam-rail .rail-row{display:flex;align-items:center;gap:9px;padding:9px 14px;width:100%;
   text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.07);
   border-radius:0}
 .cam-rail .rail-row:hover{background:rgba(213,194,149,.08)}
@@ -2164,6 +2199,31 @@ nav[data-dock] .badge{position:absolute;top:-6px;left:calc(100% - 9px);z-index:2
 .src-drop-panel label:hover{background:rgba(255,255,255,.07)}
 .src-drop-panel input{accent-color:#d5c295;width:15px;height:15px;margin:0;flex:none}
 .src-drop-panel .all{color:#d5c295;border-bottom:1px solid rgba(213,194,149,.25);margin-bottom:2px}
+
+/* Ô ngày-giờ 24h Từ/Đến: text YYYY-MM-DD HH:mm:ss cố định (không AM/PM theo locale)
+   + popover date native + 3 select giờ/phút/giây 24h. */
+.dt-inp{position:relative;display:flex;align-items:center;width:100%}
+.dt-inp .dt-text{flex:1;min-width:0;height:38px;box-sizing:border-box;padding:0 26px 0 8px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(213,194,149,.30);border-radius:12px;
+  color:#f5f5f7;font-size:12.5px;font-variant-numeric:tabular-nums}
+.dt-inp .dt-text:focus{outline:none;border-color:#d5c295;background:rgba(213,194,149,.08)}
+.dt-inp .dt-caret{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:24px;height:24px;
+  display:flex;align-items:center;justify-content:center;border:0;background:none;color:rgba(213,194,149,.8);
+  cursor:pointer;font-size:10px}
+.dt-inp.open .dt-caret{transform:translateY(-50%) rotate(180deg)}
+.dt-panel{position:fixed;z-index:1000;min-width:200px;padding:8px;
+  display:flex;flex-direction:column;gap:8px;border:1px solid rgba(213,194,149,.34);border-radius:12px;
+  background:rgba(22,22,26,.98);box-shadow:0 14px 36px rgba(0,0,0,.55)}
+.dt-panel input[type=date]{height:34px;box-sizing:border-box;width:100%;padding:0 8px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(213,194,149,.30);border-radius:10px;
+  color-scheme:dark;color:inherit;font-size:12.5px}
+.dt-panel input[type=date]:focus{outline:none;border-color:#d5c295}
+.dt-panel .dt-row{display:flex;align-items:center;gap:6px;justify-content:center}
+.dt-panel .dt-row select{height:34px;box-sizing:border-box;padding:0 6px;flex:1;text-align:center;
+  background:rgba(255,255,255,.06);border:1px solid rgba(213,194,149,.30);border-radius:10px;
+  color:inherit;font-size:12.5px;color-scheme:dark}
+.dt-panel .dt-row select:focus{outline:none;border-color:#d5c295}
+.dt-panel .dt-row span{color:rgba(213,194,149,.7);font-weight:600}
 
 /* ---------- Tìm kiếm nâng cao: radio Handling Result trong panel Edit ---------- */
 #srcEdRes label{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;cursor:pointer;
@@ -2440,3 +2500,50 @@ nav[data-dock] .badge{position:absolute;top:-6px;left:calc(100% - 9px);z-index:2
   filter: brightness(1.08);
   box-shadow: 0 3px 12px rgba(217, 188, 119, 0.4);
 }
+
+/* ---------- Tìm kiếm nâng cao: thanh lọc dạng grid, không còn khoảng trống ----------
+   Trước đây mỗi ô là flex item với bề rộng cố định -> hàng wrap để lại lỗ trống bên
+   phải, và hàng tab đứng một mình chiếm trọn 1 dòng. Giờ: tab + nút thao tác chung
+   một dòng, các ô lọc là grid auto-fit tự giãn kín bề rộng panel. */
+#srcFilterPanel{gap:12px}
+.src-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.08)}
+.src-head .grow{flex:1}
+.src-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));
+  gap:10px 12px;align-items:end}
+.src-filters > .src-f{display:flex;flex-direction:column;gap:6px;min-width:0}
+.src-filters .view-sub{font:600 10px/1 var(--b);letter-spacing:.1em;text-transform:uppercase;
+  color:rgba(229,229,234,.55);overflow:hidden;text-overflow:ellipsis}
+/* ô trong grid tự giãn: bỏ trần 240px của dropdown, bỏ min-width cứng */
+.src-filters .src-drop-trig{min-width:0;max-width:none}
+.src-filters input[type=text]{width:100%;box-sizing:border-box}
+/* nút Tìm kiếm là 1 cell của grid, cao bằng các ô, không cần label giữ chỗ */
+.src-filters #searchGo{grid-column:span 1;width:100%;justify-content:center}
+
+/* ---------- Tìm kiếm: lưới kết quả lấp kín panel, không còn khoảng trống ----------
+   pagesize = 10, lưới 5 cột -> đúng 2 hàng, trước đây mỗi thẻ cao theo aspect 16/9
+   (~250px) nên còn ~240px trống dưới đáy panel kính. Giờ lưới flex:1 +
+   grid-auto-rows:1fr -> 2 hàng chia đều chiều cao còn lại, ảnh giãn theo thẻ.
+   Meta (tên camera + giờ) đè lên đáy ảnh thay vì chiếm một dải riêng -> thẻ là
+   một ô ảnh sạch, đặc hơn. */
+#v-search #searchGrid:not(.list){flex:1;min-height:0;gap:12px;grid-auto-rows:1fr;align-content:stretch}
+/* max-height: trang cuoi chi con 1 hang (VD 3 ket qua) thi 1fr se keo the cao ca panel
+   -> gioi han de the giu dang gan vuong, phan du de trong o duoi. */
+#v-search #searchGrid:not(.list) .src-card{display:flex;flex-direction:column;min-height:0;
+  max-height:420px;border-radius:16px}
+#v-search #searchGrid:not(.list) .src-card .lib-img{flex:1;min-height:0;aspect-ratio:auto}
+#v-search #searchGrid:not(.list) .lib-meta{position:absolute;left:0;right:0;bottom:0;z-index:3;
+  gap:2px;padding:10px 12px 11px;
+  background:linear-gradient(180deg,transparent,rgba(0,0,0,.55) 45%,rgba(0,0,0,.82) 100%)}
+#v-search #searchGrid:not(.list) .lib-name{font-size:12.5px;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+#v-search #searchGrid:not(.list) .lib-sub{color:rgba(229,229,234,.72);text-shadow:0 1px 3px rgba(0,0,0,.8)}
+/* nút View/Edit/Video nổi lên phải chừa chỗ cho dải meta */
+#v-search #searchGrid:not(.list) .src-actions{align-items:center;padding-bottom:34px}
+/* pager giữ nguyên chiều cao, không hút phần dư của lưới */
+#v-search #searchPager{flex:none}
+
+/* dấu '…' ngắt dải số trang: cùng khung 30x34 như .pg, không bấm được */
+.pg-gap{flex:none;display:grid;place-items:center;width:22px;height:34px;
+  font:600 12px/1 var(--b);color:rgba(229,229,234,.34);user-select:none}
+#searchPager .mid{gap:6px}
+#searchPager .tb-div{margin:0 2px}

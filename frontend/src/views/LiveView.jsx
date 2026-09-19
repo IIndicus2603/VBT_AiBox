@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useRef, useState, useCallback} from 'react';
 import {G, BASE, API, jget, post, hms, imgOf, nice} from '../api/client.js';
 import useEvents from '../api/useEvents.js';
 import {useVideoStream} from '../hooks/useVideoStream.js';
+import { useTranslation } from '../i18n/index.jsx';
 
 /**
  * LiveView — port of #v-live trong index.html (118-197) + app.js drawGrid/
@@ -28,8 +29,92 @@ const FILTERS = [
 
 const LAYOUTS = [[2, '2×2'], [3, '3×3'], [4, '4×4']];
 
-// tên thuật toán -> tiếng Việt (giữ đúng tên từ ai.js ALGO_VI đã port).
-const algoName = (m, fromBox) => fromBox || m || 'Cảnh báo';
+// tên thuật toán -> tiếng Việt (port ALGO_VI ai.js — giống LogView/DetailView).
+const ALGO_VI = {
+  SafetyHelmetAlarm: 'Không mũ bảo hộ',
+  WorkClothesAlarm: 'Không đồng phục',
+  TelephoningAlarm: 'Gọi điện thoại',
+  SmokingAlarm: 'Hút thuốc',
+  SleepingDetectionAlarm: 'Ngủ khi làm việc',
+  OffDutyDetectionAlarm: 'Vắng mặt',
+  ChannelBlockageDetection: 'Chắn lối thoát hiểm',
+  ObjectRemoved: 'Vật để lại',
+  FieldDetectorObjectsInside: 'Xâm nhập vùng',
+  AccessElevatorAlarm: 'Xe điện vào thang máy',
+  NoMaskAlarm: 'Không khẩu trang',
+  FallOverAlarm: 'Té ngã',
+  CrowdDensityCriticalAlarm: 'Quá đông người',
+  ReflectiveClothesDetectionAlarm: 'Không áo phản quang',
+  AbnormalParkingDetection: 'Đỗ xe sai / chắn lối chữa cháy',
+  AbnormalParkingDetection_HighSpeedEvent: 'Đỗ xe bất thường (giao thông)',
+  FumesAlarmBegin: 'Khói',
+  PlayMobilePhoneDetection: 'Dùng điện thoại',
+  FireDetection: 'Cháy',
+  LongStayDetection: 'Ở lại quá lâu',
+  FightDetectionAlarm: 'Đánh nhau',
+  LineDetectorCrossed: 'Vượt vạch',
+  EnterArea: 'Vào vùng',
+  LeaveArea: 'Ra khỏi vùng',
+  AreaRuleData: 'Đếm người trong vùng',
+  LineRuleData: 'Đếm người qua vạch',
+  ObjectIsRecognized: 'Nhận diện mặt',
+  NonMotorAbnormalParkingDetection: 'Xe 2 bánh đỗ sai',
+  UncoveredTrashCanDetection: 'Thùng rác mở nắp',
+  MouseDetect: 'Chuột',
+  BareSoilCoverDetection: 'Đất trống chưa phủ',
+  DisorderStackingDetection: 'Xếp vật liệu sai',
+  TrashOverflowingDetection: 'Thùng rác tràn',
+  ExposedGarbageDetection: 'Rác lộ thiên',
+  PackedGarbageDetection: 'Rác đóng túi',
+  ShirtlessDetection: 'Không mặc áo',
+  ChefHatAlarm: 'Không mũ đầu bếp',
+  ChefClothesDetection: 'Không đồng phục đầu bếp',
+  SafetyHarnessDetection: 'Không dây an toàn',
+  ClimbingDetectionAlarm: 'Trèo leo',
+  PeopleGathering: 'Tụ tập',
+  FastMoving: 'Di chuyển nhanh',
+  StayAloneDetection: 'Thiếu người trực',
+  KnifeStickDetection: 'Cầm dao / gậy',
+  UnwashedVehicleDetection: 'Xe chưa rửa',
+  VehicleOverspeedDetection: 'Xe quá tốc độ',
+  ForkliftOverspeedDetection: 'Xe nâng quá tốc độ',
+  NoSafetyBeltDetection: 'Không thắt dây an toàn',
+  PresetMarkerDetection: 'Mốc định sẵn',
+  GasCylinderDetection: 'Bình gas',
+  ChargingGunNotinPlace: 'Súng sạc không đúng chỗ',
+  NoFireExtinguisherDetection: 'Thiếu bình chữa cháy',
+  DumpTruckWithoutTarp: 'Xe ben không phủ bạt',
+  OilLeakDetection: 'Rò dầu',
+  GasLeakDetection: 'Rò khí',
+  LiquidLeakDetection: 'Rò nước',
+  TestPaperColorChangeDetection: 'Giấy thử đổi màu',
+  NoSafetyGogglesDetection: 'Không kính bảo hộ',
+  NoSafetyGlovesDetection: 'Không găng tay',
+  NoDustGasMaskDetection: 'Không mặt nạ phòng độc',
+  ExposedLongHairDetection: 'Tóc dài không buộc',
+  CampusEntranceExitLPC: 'Biển số ra vào khu',
+  CampusVehicleCongestionDetection: 'Ùn xe trong khu',
+  DogDetection: 'Chó',
+  FuelUnloadDetect: 'Xả dầu',
+  Construction: 'Thi công đường',
+  ThrowingEvent: 'Ném rác',
+  TrafficAccident: 'Tai nạn giao thông',
+  DriveSlowly: 'Xe chạy quá chậm',
+  DriveAway: 'Xe rời đi',
+  Fogging: 'Sương mù',
+  NonMotorVehicleIntrusionDetection: 'Xe 2 bánh xâm nhập',
+  OccupancyEmergencyLane: 'Chiếm làn khẩn cấp',
+  Pedestrian: 'Người đi bộ xâm nhập',
+  Retrograde: 'Xe đi ngược chiều',
+  SnowCover: 'Tuyết phủ mặt đường',
+  Congestion: 'Ùn tắc',
+};
+const algoName = (t, m, fromBox) => {
+  if (fromBox) return fromBox;
+  const tr = t?.('algos.' + m);
+  if (tr && tr !== ('algos.' + m)) return tr;
+  return ALGO_VI[m] || m || 'Cảnh báo';
+};
 
 // 1 alarm có phải phát hiện thật không (port isDetect — type 2/6/7 không phải).
 const isDetect = a => a != null
@@ -48,6 +133,7 @@ const camOf = a => (a?.channel_id != null ? 'ch' + a.channel_id : null);
  * onState(name, state, err) để rail trái + lưới đồng bộ như S.tiles gốc.
  */
 function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, onOpen, stream, bps}) {
+  const { t } = useTranslation();
   const [state, setState] = useState('wait');
   const [err, setErr] = useState(null);
   const [meta, setMeta] = useState(null); // '1080p · 25fps' — set sau frame đầu
@@ -71,10 +157,10 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
   const st = state === 'live' ? 'live' : state === 'down' ? 'down' : state === 'pause' ? 'pause' : 'wait';
   useEffect(() => { onState?.(name, st, err); }, [name, st, err, onState]);
 
-  const stx = st === 'live' ? {cls: '', txt: 'LIVE'}
-    : st === 'down' ? {cls: 'off', txt: 'OFFLINE'}
-    : st === 'pause' ? {cls: 'wait', txt: 'TẠM DỪNG'}
-    : {cls: 'wait', txt: 'ĐANG KẾT NỐI'};
+  const stx = st === 'live' ? {cls: '', txt: t('live.stLive')}
+    : st === 'down' ? {cls: 'off', txt: t('live.stOffline')}
+    : st === 'pause' ? {cls: 'wait', txt: t('live.stPause')}
+    : {cls: 'wait', txt: t('live.stConnecting')};
   const isDown = st === 'down';
   const showArea = !!(areaOn || areaCount);
   // Camera đang có cảnh báo chưa xem -> viền nháy đỏ + badge alarm (port hiệu
@@ -88,8 +174,8 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
   const codecLine = c
     ? nice(c.codec_name) + (c.profile && c.level ? ` ${c.profile} ${(c.level / 10).toFixed(1)}` : '')
     : null;
-  const note = isDown ? (err ? String(err).slice(0, 42) : 'Mất kết nối')
-    : st === 'pause' ? 'ngoài vùng nhìn'
+  const note = isDown ? (err ? String(err).slice(0, 42) : t('live.disconnected'))
+    : st === 'pause' ? t('live.outOfView')
     : [bps ? bps.toFixed(1) + ' Mbps' : null, c ? nice(c.codec_name) : null].filter(Boolean).join(' · ');
 
   return (
@@ -100,15 +186,15 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
       <div className="t-top">
         <div className="t-id">
           <div className="t-name">{displayName}</div>
-          <div className="t-code">{codecLine || 'chưa có codec'}</div>
+          <div className="t-code">{codecLine || t('live.noCodec')}</div>
         </div>
         {hasAlarm && (
-          <span className="badge t-alarm" title={'Cảnh báo: ' + (alarm.algo || '')}
+          <span className="badge t-alarm" title={t('live.alertLabel') + ' ' + (alarm.algo || '')}
                 style={{animation: 'omAlertBorder 1.6s ease-out infinite'}}>
             {'⚠ ' + alarm.n}
           </span>
         )}
-        <span className="badge t-area" title="Người trong vùng (real-time)" hidden={!showArea}>
+        <span className="badge t-area" title={t('live.areaPeople')} hidden={!showArea}>
           👥 {(areaCount ? areaCount.n : 0)}
         </span>
         <span className={'badge ' + stx.cls}><span className="t">{stx.txt}</span></span>
@@ -125,6 +211,7 @@ function Tile({name, displayName, streamUrl, areaOn, areaCount, alarm, onState, 
 }
 
 export default function LiveView({onOpen, onSeen, unread}) {
+  const { t } = useTranslation();
   // ---------- state tương đương S của app.js ----------
   const [streams, setStreams] = useState({});      // name -> object /api/streams
   const [order, setOrder] = useState([]);          // tên luồng đã sort
@@ -144,6 +231,12 @@ export default function LiveView({onOpen, onSeen, unread}) {
   const [fOpen, setFOpen] = useState(false);       // menu lọc
   const [layoutOpen, setLayoutOpen] = useState(false); // menu bố cục
   const [refreshing, setRefreshing] = useState(false);
+
+  const filters = [
+    {k: 'all',  l: t('live.filterAll'),  dot: 'var(--cy)'},
+    {k: 'live', l: t('live.filterLive'), dot: 'var(--ok)'},
+    {k: 'down', l: t('live.filterDown'), dot: 'var(--err)'},
+  ];
 
   const lastRef = useRef(last);
   lastRef.current = last;
@@ -255,7 +348,7 @@ export default function LiveView({onOpen, onSeen, unread}) {
         act[cam] = {
           n: (cur?.n || 0) + 1,
           ts: Math.max(cur?.ts || 0, a.ts || 0),
-          algo: cur?.algo || algoName(a.algo_model, a.algo_name) || a.label,
+          algo: cur?.algo || algoName(t, a.algo_model, a.algo_name) || a.label,
         };
       }
       // prev thắng theo từng camera: alarm SSE vừa tới trong lúc fetch không bị đè.
@@ -264,7 +357,7 @@ export default function LiveView({onOpen, onSeen, unread}) {
       // Cần chính xác ở mức đó thì thêm endpoint đếm unread nhóm theo channel_id.
       setActiveAlarm(prev => ({...act, ...prev}));
     } catch { /* khe */ }
-  }, []);
+  }, [t]);
 
   useEffect(() => { loadCams(); loadAreaCount(); loadHistory(); }, [loadCams, loadAreaCount, loadHistory]);
 
@@ -297,9 +390,9 @@ export default function LiveView({onOpen, onSeen, unread}) {
     const name = camOf(ev);
     if (name) setActiveAlarm(prev => {
       const cur = prev[name];
-      return {...prev, [name]: {n: (cur?.n || 0) + 1, ts: ev.ts, algo: algoName(ev.algo_model, ev.algo_name) || ev.label}};
+      return {...prev, [name]: {n: (cur?.n || 0) + 1, ts: ev.ts, algo: algoName(t, ev.algo_model, ev.algo_name) || ev.label}};
     });
-  }, []);
+  }, [t]);
 
   /* ---------- poll số đếm người mỗi 3s (port "tự hỏi box") ----------
      /api/area trả snapshot _AREA (số mới nhất từ box push) — dự phòng khi SSE đứt.
@@ -327,10 +420,10 @@ export default function LiveView({onOpen, onSeen, unread}) {
   const isDown = name => tileState(name) === 'down';
   const statusOf = name => {
     const st = tileState(name);
-    if (st === 'live') return {cls: '', txt: 'LIVE'};
-    if (st === 'down') return {cls: 'off', txt: 'OFFLINE'};
-    if (st === 'pause') return {cls: 'wait', txt: 'TẠM DỪNG'};
-    return {cls: 'wait', txt: 'ĐANG KẾT NỐI'};
+    if (st === 'live') return {cls: '', txt: t('live.stLive')};
+    if (st === 'down') return {cls: 'off', txt: t('live.stOffline')};
+    if (st === 'pause') return {cls: 'wait', txt: t('live.stPause')};
+    return {cls: 'wait', txt: t('live.stConnecting')};
   };
 
   const setTileState = useCallback((name, state, err) => {
@@ -401,29 +494,10 @@ export default function LiveView({onOpen, onSeen, unread}) {
             <aside className="cam-rail" data-glass>
               <div className="rail-h" style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'nowrap', gap: 6, width: '100%'}}>
                 <div style={{display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden'}}>
-                  <span className="hist-t" style={{whiteSpace: 'nowrap'}}>Danh sách camera</span>
-                  <span className="hist-n" id="railN" style={{whiteSpace: 'nowrap'}}>{order.length}</span>
+                  <span className="hist-t" style={{whiteSpace: 'nowrap'}}>{t('live.camList')}</span>
                 </div>
 
                 <div className="tb cam-tb" style={{display: 'flex', alignItems: 'center', gap: 4, margin: 0, padding: 0, border: 'none', background: 'none', flex: 'none'}}>
-                  {/* Pager */}
-                  <span id="pager" hidden={pages < 2}
-                        style={{display: 'flex', alignItems: 'center', gap: 2}}>
-                    <button id="pgPrev" data-pgctrl data-pg-dir title="Trang trước"
-                            className={page === 0 ? 'dis' : ''}
-                            onClick={() => setPage(p => Math.max(0, p - 1))}>‹</button>
-                    <span id="pgNums" style={{display: 'flex', alignItems: 'center', gap: 2}}>
-                      {pages > 1 && Array.from({length: pages}, (_, i) => (
-                        <button key={i} className={'pg' + (i === page ? ' on' : '')}
-                                onClick={() => setPage(i)}>{i + 1}</button>
-                      ))}
-                    </span>
-                    <button id="pgNext" data-pgctrl data-pg-dir title="Trang sau"
-                            className={page >= pages - 1 ? 'dis' : ''}
-                            onClick={() => setPage(p => Math.min(pages - 1, p + 1))}>›</button>
-                    <span className="tb-div" />
-                  </span>
-
                   {/* Bố cục lưới */}
                   <div className="drop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
                     <button data-glassbtn id="layoutBtn"
@@ -432,7 +506,7 @@ export default function LiveView({onOpen, onSeen, unread}) {
                                     borderColor: layoutOpen ? 'var(--gold3)' : ''}}
                             onClick={e => { e.stopPropagation(); setLayoutOpen(o => !o); }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-                           strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11}}>
+                           strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="3" width="7" height="7" rx="1.5" />
                         <rect x="14" y="3" width="7" height="7" rx="1.5" />
                         <rect x="3" y="14" width="7" height="7" rx="1.5" />
@@ -442,7 +516,7 @@ export default function LiveView({onOpen, onSeen, unread}) {
                     </button>
                     <div className="menu" id="layoutMenu" data-glass
                          hidden={!layoutOpen}
-                         style={{top: 'calc(100% + 8px)', right: 0, width: 150, borderRadius: 16,
+                         style={{top: 'calc(100% + 8px)', right: 0, width: '100%', minWidth: 0, borderRadius: 16,
                                  background: 'linear-gradient(180deg, rgba(20, 24, 32, 0.98), rgba(12, 15, 20, 0.98))',
                                  border: '1px solid rgba(255, 255, 255, 0.18)',
                                  boxShadow: '0 16px 34px rgba(0, 0, 0, 0.8)',
@@ -465,17 +539,17 @@ export default function LiveView({onOpen, onSeen, unread}) {
                   {/* Lọc */}
                   <div className="drop" style={{position: 'relative', flex: 'none', display: 'flex'}}>
                     <button data-goldbtn id="fBtn"
-                            style={{height: 27, width: 27, padding: 0, borderRadius: 10,
+                            style={{height: 32, width: 32, padding: 0, borderRadius: 10,
                                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                     borderColor: fOpen ? 'var(--gold3)' : ''}}
                             onClick={e => { e.stopPropagation(); setFOpen(o => !o); }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-                           strokeLinecap="round" strokeLinejoin="round" style={{width: 11, height: 11}}>
+                           strokeLinecap="round" strokeLinejoin="round">
                         <path d="M4 6h16M7 12h10M10 18h4" />
                       </svg>
                     </button>
                     <div className="menu" id="fMenu" data-glass hidden={!fOpen}
-                         style={{top: 'calc(100% + 8px)', right: 0, width: 270, borderRadius: 16,
+                         style={{top: 'calc(100% + 8px)', right: 0, width: 170, borderRadius: 16,
                                  background: 'linear-gradient(180deg, rgba(20, 24, 32, 0.98), rgba(12, 15, 20, 0.98))',
                                  border: '1px solid rgba(255, 255, 255, 0.18)',
                                  boxShadow: '0 16px 34px rgba(0, 0, 0, 0.8)',
@@ -483,7 +557,7 @@ export default function LiveView({onOpen, onSeen, unread}) {
                                  WebkitBackdropFilter: 'blur(20px)',
                                  zIndex: 100}}>
                       <div id="fList">
-                        {FILTERS.map(f => {
+                        {filters.map(f => {
                           const n = order.filter(nm =>
                             f.k === 'live' ? tileState(nm) === 'live' :
                             f.k === 'down' ? isDown(nm) : true).length;
@@ -501,9 +575,10 @@ export default function LiveView({onOpen, onSeen, unread}) {
                   </div>
                 </div>
               </div>
+
               <div className="rail-list nosb" id="rail">
                 {order.length === 0 ? (
-                  <div className="al-load">Đang đọc danh sách camera…</div>
+                  <div className="al-load">{t('live.readingCams')}</div>
                 ) : (
                   order.map(nm => {
                     const st = statusOf(nm);
@@ -531,6 +606,26 @@ export default function LiveView({onOpen, onSeen, unread}) {
                   })
                 )}
               </div>
+
+              {/* Hàng phân trang ở đáy danh sách camera */}
+              {pages > 1 && (
+                <div className="rail-pager" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', flex: 'none'}}>
+                  <span id="pager" style={{display: 'flex', alignItems: 'center', gap: 4}}>
+                    <button id="pgPrev" data-pgctrl data-pg-dir title={t('live.prevPage')}
+                            className={page === 0 ? 'dis' : ''}
+                            onClick={() => setPage(p => Math.max(0, p - 1))}>‹</button>
+                    <span id="pgNums" style={{display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', justifyContent: 'center'}}>
+                      {Array.from({length: pages}, (_, i) => (
+                        <button key={i} className={'pg' + (i === page ? ' on' : '')}
+                                onClick={() => setPage(i)}>{i + 1}</button>
+                      ))}
+                    </span>
+                    <button id="pgNext" data-pgctrl data-pg-dir title={t('live.nextPage')}
+                            className={page >= pages - 1 ? 'dis' : ''}
+                            onClick={() => setPage(p => Math.min(pages - 1, p + 1))}>›</button>
+                  </span>
+                </div>
+              )}
             </aside>
 
             <div className="live-main" style={{display: 'flex', flexDirection: 'column'}}>
@@ -542,7 +637,7 @@ export default function LiveView({onOpen, onSeen, unread}) {
                 {shown.length === 0 ? (
                   <div className="empty">
                     <span className="plus">+</span>
-                    <span className="t">Không có luồng nào khớp</span>
+                    <span className="t">{t('live.noMatchingStream')}</span>
                   </div>
                 ) : (
                   shown.map(nm => (
@@ -566,27 +661,27 @@ export default function LiveView({onOpen, onSeen, unread}) {
               {/* Thanh lịch sử cảnh báo toàn box */}
               <div className="hist-bar" data-glass style={{flex: 'none', marginTop: 8, borderRadius: 18}}>
                 <div className="hist-h" style={{flexWrap: 'wrap'}}>
-                  <span className="hist-t">Lịch sử cảnh báo</span>
+                  <span className="hist-t">{t('live.alertHistory')}</span>
                   <span className="hist-n" id="histN2">
-                    {unread ? unread + ' cảnh báo mới' : 'chưa có cảnh báo mới'}
+                    {unread ? t('live.newAlerts', {count: unread}) : t('live.noNewAlerts')}
                   </span>
                   <div className="grow" />
                   <span style={{font: '400 10px/1 var(--b)', color: 'rgba(229,229,234,.38)', whiteSpace: 'nowrap'}}>
-                    cuộn ngang · bấm để xem lại clip
+                    {t('live.histHint')}
                   </span>
                 </div>
-                <div className="hist-list" id="hist2" onWheel={e => {
+                <div className="hist-list nosb" id="hist2" onWheel={e => {
                   if (e.deltaY !== 0) {
                     e.currentTarget.scrollLeft += e.deltaY;
                   }
                 }}>
                   {histList.length === 0 ? (
-                    <span className="h-none">Chưa có cảnh báo nào từ AI box</span>
+                    <span className="h-none">{t('live.noAlertsFromBox')}</span>
                   ) : (
                     histList.map((x, i) => {
                       const img = imgOf(x);
                       return (
-                        <div key={x.event_id || i} className="h-item" title="Cảnh báo này không có clip"
+                        <div key={x.event_id || i} className="h-item" title={t('detail.noClip')}
                              style={{cursor: 'pointer'}}
                              onClick={() => {
                                const n = camOf(x);
@@ -595,16 +690,13 @@ export default function LiveView({onOpen, onSeen, unread}) {
                                onOpen?.(n);           // mở detail camera của cảnh báo
                              }}>
                           {img ? (
-                            <img src={img} alt={'Ảnh phát hiện ' + (algoName(x.algo_model, x.algo_name) || '')}
+                            <img src={img} alt={'Ảnh phát hiện ' + (algoName(t, x.algo_model, x.algo_name) || '')}
                                  loading="lazy" onError={e => {
-                                   // Box lưu ảnh muộn hơn lúc push alarm -> ảnh mới qua SSE
-                                   // load lỗi ngay (404). Retry thay src vài lần thay vì vứt
-                                   // "ảnh lỗi" vĩnh viễn (phải đổi tab mới có ảnh).
                                    const el = e.currentTarget;
                                    const n = (el.dataset.retry || 0);
                                    if (n >= 3) {
                                      const d = document.createElement('div');
-                                     d.className = 'h-noimg'; d.textContent = 'ảnh lỗi';
+                                     d.className = 'h-noimg'; d.textContent = t('live.imgErr');
                                      el.replaceWith(d);
                                      return;
                                    }
@@ -613,11 +705,8 @@ export default function LiveView({onOpen, onSeen, unread}) {
                                    setTimeout(() => { if (el.isConnected) el.src = orig; }, 1500);
                                  }} />
                           ) : (
-                            <div className="h-noimg">không ảnh</div>
+                            <div className="h-noimg">{t('live.noImg')}</div>
                           )}
-                          {/* Overlay hiện khi hover — dùng .h-play co san (CSS da wire
-                              .h-item:hover .h-play). pointer-events:none nen click van
-                              roi vao .h-item -> mo camera cua canh bao. */}
                           <div className="h-play"><span>▶</span></div>
                           <div className="h-meta">
                             <span className="h-algo">{algoName(x.algo_model, x.algo_name) || x.label}</span>
